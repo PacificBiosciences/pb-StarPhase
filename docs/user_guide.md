@@ -2,7 +2,6 @@
 Table of contents:
 
 * [Quickstart](#quickstart)
-<!-- * [Common uses cases](#common-use-cases) -->
 * [Supported upstream processes](#supported-upstream-processes)
 * [Output files](#output-files)
 * [FAQ](#faq)
@@ -66,12 +65,6 @@ pharmgoat diplotype \
 [2023-09-15T13:26:02.204Z INFO  pharmgoat] Saving diplotypes to "./HG001/pharmgoat/HG001.pharmgoat.json"
 [2023-09-15T13:26:02.450Z INFO  pharmgoat] Process finished successfully.
 ```
-
-<!-- # Common use cases
-TODO
-
-## Example common use case
-TODO -->
 
 # Supported upstream processes
 The following upstream processes are supported as inputs to PharmGOAT:
