@@ -1,4 +1,11 @@
-# pb-StarPhase: Phase-aware pharmacogenomic diplotyper for PacBio data
+<h1 align="center"><img width="300px" src="images/logo_pb-StarPhase.svg"/></h1>
+
+<h1 align="center">pb-StarPhase</h1>
+
+<p align="center">A phase-aware pharmacogenomic diplotyper for PacBio sequencing data</p>
+
+***
+
 The pb-StarPhase tool will diplotype pharmacogenomic (PGx) genes from [PacBio](https://www.pacb.com/technology/) datasets.
 Key features include:
 
