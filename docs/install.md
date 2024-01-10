@@ -1,5 +1,5 @@
 # Installing pb-StarPhase
-<!-- ## From conda
+## From conda
 The easiest way to install pb-StarPhase is through [conda](https://docs.conda.io/projects/conda/en/stable/user-guide/install/index.html):
 
 ```bash
@@ -8,8 +8,8 @@ conda create -n pbstarphase -c bioconda pbstarphase
 # OR install latest into current conda environment
 conda install pbstarphase
 # OR install a specific version into current conda environment
-conda install pbstarphase=0.7.0
-``` -->
+conda install pbstarphase=0.8.0
+```
 
 ## From GitHub
 Use the following instructions to get the most recent version of pb-StarPhase directly from GitHub:
