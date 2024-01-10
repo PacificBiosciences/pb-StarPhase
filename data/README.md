@@ -2,7 +2,7 @@
 ## Database files
 Databases were pre-generated for ease-of-use, sharing, and backwards compatibility when using older versions of pb-StarPhase.
 Though we will do our best to avoid breaking changes, database files are **not** guaranteed to work on versions that do not match.
-Additionally, these databases represent a snapshot in time of upstream data sources (e.g., CPIC).
+Additionally, these databases represent a snapshot in time of upstream data sources (e.g., CPIC and IMGTHLA).
 Running the same command at a later date may produce a different database with updated annotations.
 
 Each file is labeled as `{version}/cpic_{YYYYMMDD}.json` and represents a run of the following command using the specified `{version}` of pb-StarPhase on the corresponding date (`{YYYYMMDD}`):
@@ -11,3 +11,20 @@ Each file is labeled as `{version}/cpic_{YYYYMMDD}.json` and represents a run of
 pbstarphase build \
     --output-db {version}/cpic_{YYYYMMDD}.json
 ```
+
+# Data sources and citations
+## CPIC data citations
+All CPIC variants are sourced via the [CPIC API](https://cpicpgx.org/api-and-database/).
+As of this writing, versioning is *not* available via the API, so we instead tag the creation date in the `database_metadata/cpic_version` for all database files.
+CPIC data is released under [CC0 1.0 Universal (CC0 1.0) Public Domain Dedication](https://creativecommons.org/publicdomain/zero/1.0/) license.
+If you use the CPIC data within our database files, the authors and maintainers of CPIC ask that you follow their instructions for citing the relevant publications and resources: [https://cpicpgx.org/license/](https://cpicpgx.org/license/).
+
+## HLA data citations
+All HLA sequences are sourced and unmodified from [https://github.com/ANHIG/IMGTHLA](https://github.com/ANHIG/IMGTHLA).
+The exact git tag version is stored in the `database_metadata/hla_version` for all database versions after v0.8.0.
+If you use the HLA sequences within our database files, the authors and maintainers of IMGTHLA ask that you cite the following:
+
+1. Robinson J, Barker DJ, Georgiou X, Cooper MA, Flicek P, Marsh SGE: IPD-IMGT/HLA Database. Nucleic Acids Research (2020), 48:D948-55
+2. Robinson J, Malik A, Parham P, Bodmer JG, Marsh SGE: IMGT/HLA - a sequence database for the human major histocompatibility complex Tissue Antigens (2000), 55:280-287
+
+For more details, see the [IMGTHLA license file](https://github.com/ANHIG/IMGTHLA/blob/Latest/LICENCE.md).

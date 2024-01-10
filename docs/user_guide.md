@@ -2,6 +2,7 @@
 Table of contents:
 
 * [Quickstart](#quickstart)
+* [Common uses cases](#common-use-cases)
 * [Supported upstream processes](#supported-upstream-processes)
 * [Output files](#output-files)
 * [FAQ](#faq)
@@ -66,12 +67,29 @@ pbstarphase diplotype \
 [2023-09-15T13:26:02.450Z INFO  pbstarphase] Process finished successfully.
 ```
 
+# Common use cases
+## HLA diplotyping
+With v0.8.0, pb-StarPhase supports diplotyping of _HLA-A_ and _HLA-B_ from an aligned BAM file.
+To enable HLA diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
+HLA diplotyping is more computationally expensive than the CPIC genes.
+If run-time is an issue, we recommend using the `--threads` option to provide additional cores to StarPhase.
+
+```bash
+pbstarphase diplotype \
+    --bam ${BAM} \
+    --threads ${THREADS} \
+    ...
+```
+
 # Supported upstream processes
 The following upstream processes are supported as inputs to pb-StarPhase:
 
 * Data types
   * PacBio whole genome sequencing
   * PacBio PGx panel
+* Aligners (BAM files):
+  * [pbmm2](https://github.com/PacificBiosciences/pbmm2) (recommended)
+  * [minimap2](https://github.com/lh3/minimap2)
 * Variant callers
   * [DeepVariant](https://github.com/google/deepvariant) - For SNV/indel.
 * Phasers
@@ -88,13 +106,14 @@ Fields are described below, with a partial example further down:
 * `database_metadata` - Copy of the database metadata describing how the database was generated:
   * `pbstarphase_version` - The version of pb-StarPhase that generated the database.
   * `cpic_version` - A tag indicating the CPIC version; the API does not currently provide a global version tag, so it is instead labeled as `API-{build_time}`.
+  * `hla_version` - A tag indicating the IMGTHLA version; these are identical to GitHub tags on [https://github.com/ANHIG/IMGTHLA](https://github.com/ANHIG/IMGTHLA).
   * `build_time` - The time this database was built; in UTC format.
 * `gene_details` - The core output; each gene will have a key in this dictionary with the following information:
   * `diplotypes` - A list of all exact matching diplotype combinations; ambiguous combinations (i.e., lack of phase information) may lead to more than one possible diplotype combination.
     * `hap1` - Name of the first haplotype in the diplotype.
     * `hap2` - Name of the second haplotype in the diplotype.
     * `diplotype` - Name of the combined diplotype; `{hap1}/{hap2}`.
-  * `variant_details` - Contains the list of all identified variants from the VCF file that match a variant definition.
+  * `variant_details` - Contains the list of all identified variants from the VCF file that match a variant definition. Will be `null` for HLA genes.
     * `cpic_variant_id` - The CPIC assigned variant identifier (unsigned integer).
     * `cpic_name` - The CPIC assigned name for this variant; this is typically a human-readable identifier that has been historically used in pharmacogenomic literature.
     * `dbsnp` - A DBSNP identifier, if available.
@@ -106,16 +125,23 @@ Fields are described below, with a partial example further down:
     * `normalized_genotype` - Describes the associated genotype after genotype normalization.
       * `genotype` - This will almost always match the genotype (GT) from the VCF file; multi-allelic sites will get converted into one of the following: `[0/0, 0/1, 0|1, 1|0, 1/1]`.
       * `phase_set` - A phase set ID (PS) from the VCF file; this will be `null` for unphased or homozygous variants. Note that variants on different phase sets are _not_ considered phased with each other (they are effectively, unphased).
+  * `mapping_details` - Contains the list of identified read mappings from the BAM files. Will be `null` for non-HLA genes.
+    * `read_qname` - The read query name.
+    * `best_hla_id` - The best matching HLA ID, does not have to be one of the haplotypes reported in the best diplotype.
+    * `best_star_allele` - The HLA star allele corresponding to the `best_hla_id`.
+    * `best_mapping_stats` - The length, number of mismatches (nm), and number of unmapped bases for the `best_hla_id` sequences for cDNA and DNA mapped against the read. Note that cDNA/DNA will only be present if used as part of the scoring.
+    * `is_ignored` - True if the read was ignored when solving the diplotype due to a high error rate.
 
 Partial example:
 ```
 {
-  "pbstarphase_version": "0.6.1-c952b5e",
-  "database_metadata": {
-    "pbstarphase_version": "0.6.1-c0d01e4",
-    "cpic_version": "API-2023-09-14T20:48:01.821179769Z",
-    "build_time": "2023-09-14T20:48:01.821179769Z"
-  },
+  "pharmgoat_version": "0.8.0-fa50d82",
+  "database_metadata": {
+    "pbstarphase_version": "0.8.0-79d4679",
+    "cpic_version": "API-2023-12-19T16:11:50.938951041Z",
+    "hla_version": "v.354.0-alpha",
+    "build_time": "2023-12-19T16:11:50.938951041Z"
+  },
   "gene_details": {
     ...
     "CYP4F2": {
@@ -143,6 +169,34 @@ Partial example:
           }
         },
         ...
+      ]
+    }
+    ...
+    "HLA-A": {
+      "diplotypes": [
+        {
+          "hap1": "01:01:01:01",
+          "hap2": "26:01:01:01",
+          "diplotype": "01:01:01:01/26:01:01:01"
+        }
+      ],
+      "variant_details": null,
+      "mapping_details": [
+        {
+          "read_qname": "m64004_220923_203020/69142120/ccs",
+          "best_hla_id": "HLA:HLA00073",
+          "best_star_allele": "26:01:01:01",
+          "best_mapping_stats": {
+            "cdna_len": null,
+            "cdna_nm": null,
+            "cdna_unmapped": null,
+            "dna_len": 3517,
+            "dna_nm": 4,
+            "dna_unmapped": 0
+          },
+          "is_ignored": false
+        },
+        ...
       ]
     }
     ...
@@ -177,13 +231,17 @@ pbstarphase build \
   --output-json {path_to_new_database}.json
 ```
 
-This requires an internet connection that can query the CPIC API for the latest genes, allele definitions, and variants.
+This requires an internet connection that can query the CPIC API and IMGTHLA GitHub for the latest genes, allele definitions, and variants.
 
 ## Why are some of the haplotypes ignored?
-Some genes, like _G6PD_, include reference variants that are alternate sequences relative to the GRCh38 reference genome.
+Some CPIC genes, like _G6PD_, include reference variants that are alternate sequences relative to the GRCh38 reference genome.
 This can cause some haplotypes, like _G6PD_'s "Mediterranean Haplotype", to require variants that would be a REF allele in a standard VCF file.
 Unfortunately, this can generate ambiguity between an implied homozygous reference call (i.e., "0/0") and a lack of coverage of that variant site.
 If these haplotypes are not ignored, there can be systematic errors in the downstream reporting due to the assumption of REF allele when no VCF entry is identified.
 Any haplotype that is ignored this way is reported as a warning in the pb-StarPhase stderr.
-As of v0.6.1, there are only two ignored haplotypes in the pb-StarPhase database.
+As of v0.6.1, there are only two ignored CPIC haplotypes in the pb-StarPhase database.
 Future work may try to resolve this ambiguity.
+
+IMGTHLA also includes several incomplete HLA definitions that may be missing DNA sequences, cDNA sequences, or be heavily truncated (e.g., several only include exons 2 and 3).
+By default, pb-StarPhase requires a DNA sequence to be present for each HLA haplotype.
+Any haplotypes without a DNA sequence are ignored.
