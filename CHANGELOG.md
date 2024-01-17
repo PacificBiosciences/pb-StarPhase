@@ -1,3 +1,7 @@
+# v0.8.1
+## Fixed
+- Fixed a bug where the "\*" was not pre-pended to HLA alleles in the output files
+
 # v0.8.0
 ## Changes
 - Added the ability to store HLA haplotype sequences from IMGTHLA in our database
