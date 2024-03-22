@@ -1,3 +1,7 @@
+# v0.8.2
+## Fixed
+- Fixed a bug where failure to align an HLA allele to a read would cause an unhandled panic
+
 # v0.8.1
 ## Fixed
 - Fixed a bug where the "\*" was not pre-pended to HLA alleles in the output files
