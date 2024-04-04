@@ -68,11 +68,12 @@ pbstarphase diplotype \
 ```
 
 # Common use cases
-## HLA diplotyping
+## HLA and _CYP2D6_ diplotyping
 With v0.8.0, pb-StarPhase supports diplotyping of _HLA-A_ and _HLA-B_ from an aligned BAM file.
-To enable HLA diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
-HLA diplotyping is more computationally expensive than the CPIC genes.
-If run-time is an issue, we recommend using the `--threads` option to provide additional cores to StarPhase.
+With v0.9.0, pb-StarPhase supports diplotyping of _CYP2D6_ from an aligned BAM file for whole genome datasets.
+To enable HLA and _CYP2D6_ diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
+Both HLA and _CYP2D6_ diplotyping is more computationally expensive than the CPIC genes.
+If run-time is an issue, we recommend using the `--threads` option to provide additional cores to StarPhase, which will improve the HLA diplotyping components.
 
 ```bash
 pbstarphase diplotype \
@@ -86,7 +87,9 @@ The following upstream processes are supported as inputs to pb-StarPhase:
 
 * Data types
   * PacBio whole genome sequencing
-  * PacBio PGx panel
+  * PacBio PGx panel - _CYP2D6_ currently unsupported
+* Reference genomes
+  * GRCh38 - we recommend the [human_GRCh38_no_alt_analysis_set](https://github.com/PacificBiosciences/reference_genomes/tree/main/reference_genomes/human_GRCh38_no_alt_analysis_set)
 * Aligners (BAM files):
   * [pbmm2](https://github.com/PacificBiosciences/pbmm2) (recommended)
   * [minimap2](https://github.com/lh3/minimap2)
@@ -125,17 +128,22 @@ Fields are described below, with a partial example further down:
     * `normalized_genotype` - Describes the associated genotype after genotype normalization.
       * `genotype` - This will almost always match the genotype (GT) from the VCF file; multi-allelic sites will get converted into one of the following: `[0/0, 0/1, 0|1, 1|0, 1/1]`.
       * `phase_set` - A phase set ID (PS) from the VCF file; this will be `null` for unphased or homozygous variants. Note that variants on different phase sets are _not_ considered phased with each other (they are effectively, unphased).
-  * `mapping_details` - Contains the list of identified read mappings from the BAM files. Will be `null` for non-HLA genes.
+  * `mapping_details` - Contains the list of identified HLA read mappings from the BAM files. Will be `null` for non-HLA genes.
     * `read_qname` - The read query name.
     * `best_hla_id` - The best matching HLA ID, does not have to be one of the haplotypes reported in the best diplotype.
     * `best_star_allele` - The HLA star allele corresponding to the `best_hla_id`.
     * `best_mapping_stats` - The length, number of mismatches (nm), and number of unmapped bases for the `best_hla_id` sequences for cDNA and DNA mapped against the read. Note that cDNA/DNA will only be present if used as part of the scoring.
     * `is_ignored` - True if the read was ignored when solving the diplotype due to a high error rate.
+  * `multi_mapping_details` - Contains the list of identified _CYP2D6_ read mapping segments from the BAM files. Will be `null` for all other genes.
+    * `read_qname` - The read query name.
+    * `read_position` - The portion (or slice) of the read corresponding to the allele.
+    * `consensus_id` - The assigned consensus ID for this read segment.
+    * `consensus_star_allele` - The assigned star allele for this read segment.
 
 Partial example:
 ```
 {
-  "pharmgoat_version": "0.8.0-fa50d82",
+  "pbstarphase_version": "0.8.0-fa50d82",
   "database_metadata": {
     "pbstarphase_version": "0.8.0-79d4679",
     "cpic_version": "API-2023-12-19T16:11:50.938951041Z",
@@ -170,7 +178,31 @@ Partial example:
         },
         ...
       ]
-    }
+    },
+    ...
+    "CYP2D6": {
+      "diplotypes": [
+        {
+          "hap1": "*4.001+*68",
+          "hap2": "*4.001",
+          "diplotype": "*4.001+*68/*4.001"
+        }
+      ],
+      "variant_details": null,
+      "mapping_details": null,
+      "multi_mapping_details": [
+        {
+          "read_qname": "mfake/1234/ccs",
+          "read_position": {
+            "start": 0,
+            "end": 2701
+          },
+          "consensus_id": 1,
+          "consensus_star_allele": "CYP2D7"
+        },
+        ...
+      ]
+    },
     ...
     "HLA-A": {
       "diplotypes": [
@@ -183,7 +215,7 @@ Partial example:
       "variant_details": null,
       "mapping_details": [
         {
-          "read_qname": "m64004_220923_203020/69142120/ccs",
+          "read_qname": "mfake/5678/ccs",
           "best_hla_id": "HLA:HLA00073",
           "best_star_allele": "26:01:01:01",
           "best_mapping_stats": {
@@ -245,3 +277,12 @@ Future work may try to resolve this ambiguity.
 IMGTHLA also includes several incomplete HLA definitions that may be missing DNA sequences, cDNA sequences, or be heavily truncated (e.g., several only include exons 2 and 3).
 By default, pb-StarPhase requires a DNA sequence to be present for each HLA haplotype.
 Any haplotypes without a DNA sequence are ignored.
+
+## Why am I getting a weird hybrid allele call for _CYP2D6_?
+Internally, pb-StarPhase searches for hybrid D6/D7 alleles by generating representative sequences at the intron/exon boundaries and labeling them accordingly.
+For example, the allele "CYP2D6::CYP2D7::intron1" indicates an allele that looks like _CYP2D6_ until the start of intron1 (i.e., end of exon1), and then it looks more like _CYP2D7_ (note that these are not precise breakpoints for the hybrid).
+Prior to output to JSON, we attempt to resolve these alleles to known star alleles.
+For example, both "CYP2D6::CYP2D7::intron1" and "CYP2D6::CYP2D7::exon2" are re-mapped to CYP2D6*68.
+While all "CYP2D7::CYP2D6" alleles are currently mapped to *13, most "CYP2D6::CYP2D7" alleles do _not_ have a known re-mapping.
+Those without a known re-mapping are left in the pb-StarPhase internal format.
+If you encounter an allele that you think should be re-mapped, please open an issue on our GitHub.

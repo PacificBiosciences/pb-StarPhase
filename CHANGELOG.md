@@ -1,3 +1,11 @@
+# v0.9.0
+## Changes
+- Added the ability to store _CYP2D6_ variant information from PharmVar in our database
+- Released an updated database with CYP2D6 information
+- Added the ability to call _CYP2D6_ using the updated database and an aligned BAM file for WGS datasets
+- Added a CLI option to output realigned _CYP2D6_ segments to a small BAM file for IGV viewing and debugging
+- The version of pb-StarPhase is now recorded as the `pbstarphase_version` in the output JSON
+
 # v0.8.2
 ## Fixed
 - Fixed a bug where failure to align an HLA allele to a read would cause an unhandled panic
