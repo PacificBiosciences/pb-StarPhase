@@ -17,7 +17,7 @@ _HLA-A_, _HLA-B_, and _CYP2D6_ were excluded because they are not called by eith
 | _ABCG2_ | 100% | 100% |
 | _CACNA1S_ | 100% | 100% |
 | _CFTR_ | 100% | 100% |
-| _CYP2B6_ | 100% | 96.9% |
+| _CYP2B6_ | 100% | 100.0% |
 | _CYP2C19_ | 100% | 100.0% |
 | _CYP2C9_ | 100% | 98.4% |
 | _CYP3A5_ | 100% | 100% |
@@ -31,16 +31,18 @@ _HLA-A_, _HLA-B_, and _CYP2D6_ were excluded because they are not called by eith
 | _TPMT_ | 100% | 100% |
 | _UGT1A1_ | 100% | 100% |
 | _VKORC1_ | 100% | 100% |
-| Overall | 99.0% | 97.9% |
+| Overall | 99.0% | 98.1% |
 
 We manually curated the remaining differences and determined they are due to either differences in reporting or mishandling of phased alleles in PharmCAT:
 
-* _CYP2B6_ and _CYP2C9_ - There were three total discrepancies in the phased solutions. In all cases, PharmCAT reported "Unknown/Unknown" while pb-StarPhase reported a single diplotype. Interestingly, PharmCAT reported the same answer as pb-StarPhase when unphased variants were provided. When we inspected the variants, it appeared that PharmCAT was erroneously treating variants in different phase blocks as being in phase with each other. This created haplotypes that have not been described before and led to the "Unknown/Unknown" reports.
+* _CYP2C9_ - There was one total discrepancies in the phased solutions. In this case, PharmCAT reported "Unknown/Unknown" while pb-StarPhase reported a single diplotype. Interestingly, PharmCAT reported the same answer as pb-StarPhase when unphased variants were provided. When we inspected the variants, it appeared that PharmCAT was erroneously treating variants in different phase blocks as being in phase with each other. This created haplotypes that have not been described before and led to the "Unknown/Unknown" reports.
 * _DPYD_ - This gene is a little different from the other genes in that traditional haplotypes have not been built into CPIC yet. Instead, each "haplotype" is just a single variant. 
   * Unphased - If more than two variants are identified, PharmCAT handles these by reporting all variants as "{variant}/None". In contrast, pb-StarPhase will report "NO_MATCH/NO_MATCH" as there is no special treatment for _DPYD_. All reported diplotypes with <=2 variants were identical between PharmCAT and pb-StarPhase.
-  * Phased - The same phase block issue with _CYP2B6_ and _CYP2C9_ impacts the _DPYD_ results. In addition to the mismatches from 3+ variants, phase blocks can get misinterpreted in PharmCAT leading to reduced identity scores in this gene.
+  * Phased - The same phase block issue with _CYP2C9_ impacts the _DPYD_ results. In addition to the mismatches from 3+ variants, phase blocks can get misinterpreted in PharmCAT leading to reduced identity scores in this gene.
 
-In summary, we expect most unphased results to be identical between the two tools, with _DPYD_ reporting being the notable exception. With phased HiFi data, pb-StarPhase is more likely to generate correct results as it properly handles variants that are on different phase blocks.
+In summary, we expect most unphased results to be identical between the two tools, with _DPYD_ reporting being the notable exception.
+With phased HiFi data, pb-StarPhase is more likely to generate correct results as it properly handles variants that are on different phase blocks.
+However, we note from our experiment that these situations are relatively rare.
 
 ## Tool definitions
 ### pb-StarPhase

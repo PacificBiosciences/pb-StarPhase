@@ -28,3 +28,9 @@ If you use the HLA sequences within our database files, the authors and maintain
 2. Robinson J, Malik A, Parham P, Bodmer JG, Marsh SGE: IMGT/HLA - a sequence database for the human major histocompatibility complex Tissue Antigens (2000), 55:280-287
 
 For more details, see the [IMGTHLA license file](https://github.com/ANHIG/IMGTHLA/blob/Latest/LICENCE.md).
+
+## PharmVar data citations
+All CYP2D6 sequences are sourced and unmodified from PharmVar's "Download Gene Data" ZIP file on [https://www.pharmvar.org/gene/CYP2D6](https://www.pharmvar.org/gene/CYP2D6).
+The version is stored in the `database_metadata/pharmvar_version` for all database versions after v0.9.0.
+PharmVar data is released under a [Creative Commons Attribution-ShareAlike 4.0 International license](https://creativecommons.org/licenses/by-sa/4.0/) license, see [https://www.pharmvar.org/terms-and-conditions](https://www.pharmvar.org/terms-and-conditions) for more details.
+If you use the CYP2D6 sequences within our database files, the authors and maintainers of PharmVar ask that you cite the relevant publications from their website: [https://www.pharmvar.org/publications](https://www.pharmvar.org/publications).
