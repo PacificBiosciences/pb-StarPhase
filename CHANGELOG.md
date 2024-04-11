@@ -1,3 +1,13 @@
+# v0.9.1
+## Changes
+- The CLI settings log output has been updated for easier human readability
+- Exposed three new CLI options that influence how the _CYP2D6_ algorithm works: `--min-consensus-fraction`, `--min-consensus-count`, and `--dual-max-ed-delta`. Most users should not need to modify the defaults.
+
+## Fixed
+- Improved the allele chaining algorithm to reduce errors with hybrid _CYP2D6_ allele copy-number counts
+- Fixed the _CYP2D6_ star allele output to be in coding order (i.e. reverse relative to before)
+- Fixed the PharmCAT TSV output to use simple _CYP2D6_ representation
+
 # v0.9.0
 ## Changes
 - Added the ability to store _CYP2D6_ variant information from PharmVar in our database
