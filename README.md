@@ -10,7 +10,7 @@ The pb-StarPhase tool will diplotype pharmacogenomic (PGx) genes from [PacBio](h
 Key features include:
 
 * Ability to create a database from latest CPIC and IMGTHLA information
-* Ability to diplotype most genes from CPIC and as well as _HLA-A_ and _HLA-B_
+* Ability to diplotype most genes from CPIC and as well as _HLA-A_, _HLA-B_, and _CYP2D6_
 * Works on PacBio datasets from targeted and whole genome sequencing
 
 Authors: [Matt Holt](https://github.com/holtjma), [John Harting](https://github.com/jrharting), [Zev Kronenberg](https://github.com/zeeev)

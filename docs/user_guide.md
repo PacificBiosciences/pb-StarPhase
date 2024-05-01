@@ -69,8 +69,8 @@ pbstarphase diplotype \
 
 # Common use cases
 ## HLA and _CYP2D6_ diplotyping
-With v0.8.0, pb-StarPhase supports diplotyping of _HLA-A_ and _HLA-B_ from an aligned BAM file.
-With v0.9.0, pb-StarPhase supports diplotyping of _CYP2D6_ from an aligned BAM file for whole genome datasets.
+With v0.10.0, pb-StarPhase supports diplotyping of _HLA-A_, _HLA-B_, and _CYP2D6_ from an aligned BAM file.
+If using targeted sequencing datasets, see [our recommended parameters](#can-i-diplotype-using-targeted-sequencing-data).
 To enable HLA and _CYP2D6_ diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
 Both HLA and _CYP2D6_ diplotyping is more computationally expensive than the CPIC genes.
 If run-time is an issue, we recommend using the `--threads` option to provide additional cores to StarPhase, which will improve the HLA diplotyping components.
@@ -286,3 +286,10 @@ For example, both "CYP2D6::CYP2D7::intron1" and "CYP2D6::CYP2D7::exon2" are re-m
 While all "CYP2D7::CYP2D6" alleles are currently mapped to *13, most "CYP2D6::CYP2D7" alleles do _not_ have a known re-mapping.
 Those without a known re-mapping are left in the pb-StarPhase internal format.
 If you encounter an allele that you think should be re-mapped, please open an issue on our GitHub.
+
+## Can I diplotype using targeted sequencing data?
+In general yes: in our internal tests the CPIC and HLA genes behave similar to their WGS counterparts.
+However, _CYP2D6_ tends to be more difficult to accurately call with targeted sequencing.
+This is typically due to shorter read lengths, increased coverage variation across alleles, and full-allele drop out due to the capture.
+For _CYP2D6_, this is particular problematic due to the presence of deletion, duplication, and hybrid alleles that may influence the final diplotype.
+For targeted sequencing, we recommend using the following _CYP2D6_-specific additional parameters, which attempt to account for these complicating factors: `--infer-connections --normalize-d6-only`.
