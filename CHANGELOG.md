@@ -1,3 +1,15 @@
+# v0.10.0
+## Changes
+- Added support for calling _CYP2D6_ from targeted sequencing data
+  - In general, accuracy for targeted datasets is less than that of WGS. This is largely due to difficulties with capture that lead to decreased coverage of hybrid or duplicated alleles.
+  - We recommend using two additional parameters when using targeted sequencing data: `--infer-connections --normalize-d6-only`
+- Added two new CLI options to support targeted sequencing datasets:
+  - `--infer-connections` - If set, pb-StarPhase will infer allele connections that are not observed in the dataset but common in the population. For example, *4 and *68 are commonly found together, as are *10 and *36. This option is recommended when reads are too short to directly span from one allele to the next.
+  - `--normalize-d6-only` - If set, pb-StarPhase will only normalize the copy numbers using the _CYP2D6_ alleles (i.e., excluding any discovered _CYP2D7_ alleles). This option is recommended when coverage of the _CYP2D7_ alleles is inconsistent relative to the _CYP2D6_ alleles.
+
+## Fixed
+- Fixed a reporting issue in the PharmCAT TSV where brackets were missing from combination alleles
+
 # v0.9.1
 ## Changes
 - The CLI settings log output has been updated for easier human readability
