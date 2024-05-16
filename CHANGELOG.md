@@ -1,3 +1,14 @@
+# v0.10.1
+## Changes
+- Updated the crate for _CYP2D6_ generation, improving alignment offset seeding and reducing over-splitting for shorter reads (e.g., targeted sequencing)
+- Added a secondary penalty for using a non-unique chain pair during the _CYP2D6_ chaining step. This tends to reduce errors caused by ambiguous chains in WGS datasets.
+
+## Fixed
+- Fixed an issue with _CYP2D6_ where an "UNKNOWN" cluster could erroneously generate an extra allele when two defined alleles came from the same HPC-cluster
+- Fixed an issue with _CYP2D6_ where alleles excluding from normalization could form their own unpenalized haplotype (e.g., a *68 allele by itself)
+- Fixed a panic caused by typing an empty _CYP2D6_ sequence
+- Fixed a panic caused by no usable reads in the _CYP2D6_ search region
+
 # v0.10.0
 ## Changes
 - Added support for calling _CYP2D6_ from targeted sequencing data
