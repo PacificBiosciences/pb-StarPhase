@@ -1,3 +1,9 @@
+# v0.10.2
+## Changes
+- The CLI has been modified such that the VCF file is now optional. If a VCF file is not provided, all variant-based diplotyping will be skipped and those genes will be absent from all output files. If no VCF or BAM files are provided, pb-StarPhase will generate a user error message.
+- Two new options control the genes that are diplotyped: `--include-set` and `--exclude-set`. Only one of these options can be specified at a time. Both accept a plain text file with one gene name per line. If `--include-set` is specified, then only the genes in the given file will be diplotyped. If `--exclude-set` is specified, then all genes will be diplotyped _except_ the ones in the given file.
+- Underlying CYP2D6 consensus algorithm was updated for greater compute efficiency
+
 # v0.10.1
 ## Changes
 - Updated the crate for _CYP2D6_ generation, improving alignment offset seeding and reducing over-splitting for shorter reads (e.g., targeted sequencing)
