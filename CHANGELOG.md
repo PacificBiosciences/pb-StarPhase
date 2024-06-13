@@ -1,3 +1,12 @@
+# v0.11.0
+## Changes
+- The underlying methodology has been significantly altered to improve _CYP2D6_ diplotyping in targeted sequencing
+  - The core _CYP2D6_ regions have been shrunk to contain just the regions containing variants that define the allele
+  - Additional regions have been added solely for the purpose of linking _CYP2D6_ alleles: REP6, REP7, spacer, and "link_region" (region between CYP2D6 and CYP2D7 typically)
+  - The chaining algorithm has been altered to account for the additional regions above. A "normal" haplotype chain is expected to have the following order of regions in GRCh38: REP6 -> CYP2D6 -> link_region -> REP7 -> spacer -> CYP2D7
+  - The scoring of diplotype chain pairs is now based on a unified scoring scheme that accounts for: 1) edit distance of observations to the chain pair, 2) likelihood of the chain pair based on allele coverage and multinomial, 3) lasso penalty for duplications, and 4) penalty for unexpected chain events (see above "normal" chain)
+  - The debug BAM will now output a haplotype block for each identified region (e.g., REP6 will have its own block)
+
 # v0.10.2
 ## Changes
 - The CLI has been modified such that the VCF file is now optional. If a VCF file is not provided, all variant-based diplotyping will be skipped and those genes will be absent from all output files. If no VCF or BAM files are provided, pb-StarPhase will generate a user error message.
