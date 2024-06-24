@@ -1,3 +1,9 @@
+# v0.11.1
+## Fixed
+- Fixed a bug where empty haplotypes were treated as valid candidates and then reported as part of the diplotype
+- Revised inferred chain logic to remove erroneous inferrences and add missing inferrences
+- Fixed a bug where a poorly mapping read in an HLA reigon would fail to match any alleles in the database and cause a panic
+
 # v0.11.0
 ## Changes
 - The underlying methodology has been significantly altered to improve _CYP2D6_ diplotyping in targeted sequencing
