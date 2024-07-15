@@ -1,3 +1,7 @@
+# v0.11.3
+## Fixed
+- Updated the `build` mode to account for IMGT-HLA's new database format that was released with `v3.57.0-alpha`
+
 # v0.11.2
 ## Changes
 - Added a penalty for CYP2D6 haplotypes composed of only hybrid alleles that are expected to be found paired with another allele
