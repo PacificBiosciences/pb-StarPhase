@@ -1,3 +1,11 @@
+# v0.12.0
+## Changes
+- Hard-coded coordinates (GRCh38) for HLA-A, HLA-B, and CYP2D6 calling have been moved into the database file. Prior database versions without this new config information will automatically load the previously hard-coded values. This configuration is provided for transparency and experimentation in other reference coordinate systems, we do not recommend or support changing the provided default values.
+- Released an updated database with the updated config format and name pattern change: `data/v0.12.0/pbstarphase_20240716.json.gz`
+- Changed CYP2D6 consensus merging component to merge on sub-alleles instead of core alleles. 
+    - To support the this change, consensuses with ambiguous CYP2D6 assignments (e.g. equal matches to "*4.001" and "*4.015") are labeled as unknown for the purpose of merging with similar consensus alleles prior to generating a final consensus set.
+    - Internal tests showed this combination of changes led to increased sensitivity for sub-allele identification without injecting errors at the core allele or diplotype level.
+
 # v0.11.3
 ## Fixed
 - Updated the `build` mode to account for IMGT-HLA's new database format that was released with `v3.57.0-alpha`
