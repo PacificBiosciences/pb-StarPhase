@@ -2,14 +2,14 @@
 ## Database files
 Databases were pre-generated for ease-of-use, sharing, and backwards compatibility when using older versions of pb-StarPhase.
 Though we will do our best to avoid breaking changes, database files are **not** guaranteed to work on versions that do not match.
-Additionally, these databases represent a snapshot in time of upstream data sources (e.g., CPIC and IMGTHLA).
+Additionally, these databases represent a snapshot in time of upstream data sources (e.g., CPIC, IMGTHLA, and PharmVar).
 Running the same command at a later date may produce a different database with updated annotations.
 
-Each file is labeled as `{version}/cpic_{YYYYMMDD}.json` and represents a run of the following command using the specified `{version}` of pb-StarPhase on the corresponding date (`{YYYYMMDD}`):
+As of v0.12.0, each file is labeled as `{version}/pbstarphase_{YYYYMMDD}.json.gz` and represents a run of the following command using the specified `{version}` of pb-StarPhase on the corresponding date (`{YYYYMMDD}`):
 
 ```bash
 pbstarphase build \
-    --output-db {version}/cpic_{YYYYMMDD}.json
+    --output-db {version}/pbstarphase_{YYYYMMDD}.json.gz
 ```
 
 # Data sources and citations
