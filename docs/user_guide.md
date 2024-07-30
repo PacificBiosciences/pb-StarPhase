@@ -73,12 +73,10 @@ With v0.10.0, pb-StarPhase supports diplotyping of _HLA-A_, _HLA-B_, and _CYP2D6
 If using targeted sequencing datasets, see [our recommended parameters](#can-i-diplotype-using-targeted-sequencing-data).
 To enable HLA and _CYP2D6_ diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
 Both HLA and _CYP2D6_ diplotyping is more computationally expensive than the CPIC genes.
-If run-time is an issue, we recommend using the `--threads` option to provide additional cores to StarPhase, which will improve the HLA diplotyping components.
 
 ```bash
 pbstarphase diplotype \
     --bam ${BAM} \
-    --threads ${THREADS} \
     ...
 ```
 
@@ -264,6 +262,8 @@ pbstarphase build \
 ```
 
 This requires an internet connection that can query the CPIC API and IMGTHLA GitHub for the latest genes, allele definitions, and variants.
+Additionally, this relies on upstream databases maintaining a known structure.
+If that structure changes, this command may fail and require an update to the software to resolve it.
 
 ## Why are some of the haplotypes ignored?
 Some CPIC genes, like _G6PD_, include reference variants that are alternate sequences relative to the GRCh38 reference genome.
@@ -293,3 +293,13 @@ However, _CYP2D6_ tends to be more difficult to accurately call with targeted se
 This is typically due to shorter read lengths, increased coverage variation across alleles, and full-allele drop out due to the capture.
 For _CYP2D6_, this is particular problematic due to the presence of deletion, duplication, and hybrid alleles that may influence the final diplotype.
 For targeted sequencing, we recommend using the following _CYP2D6_-specific additional parameters, which attempt to account for these complicating factors: `--infer-connections --normalize-d6-only`.
+
+## Can I get more detailed output information?
+There is an optional output, `--output-debug`, which is primarily for debugging issues that may occur while diplotyping the complex HLA and _CYP2D6_ genes.
+The outputs contained in this folder are subject to change as the algorithms evolve.
+Here is a brief list of some of the current debug outputs:
+
+* `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
+* `cyp2d6_consensus.bam` - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The phase set tag (PS) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
+* `cyp2d6_link_graph.svg` - A graphical representation of the connections present between CYP2D6 consensus segments.
+* `hla_debug.json` - Contains the summary mapping information of each database entry to the generated HLA consensus sequences.

@@ -1,3 +1,21 @@
+# v0.13.0
+## Changes
+- The algorithm for _HLA-A_ and _HLA-B_ has been modified to use a consensus-based approach to solve the alleles, a simpler version of the algorithm for _CYP2D6_.
+  - CLI options related to consensus generation now control both HLA and _CYP2D6_ calling. These have been moved into a separate category on the CLI labeled "Consensus (HLA and CYP2D6)".
+  - In internal tests, these changes slightly improved the accuracy of 4th-field entries in the HLA calls (2nd- and 3rd-field were unaffected). Additionally, the approach significantly reduced compute time requirements, averaging ~10% of CPU time required for v0.12.0.
+  - With this change, the `--threads` option does not provide any benefit to the current algorithms. It has been deprecated, but may be added again if future optimizations allow it.
+  - The `--max-error-rate` default has been adjusted for comparison to just the reference allele for each HLA gene, with a new default of 0.07 (previously 0.05).
+  - Previous option `--min-allele-fraction` for HLA has been removed. The consensus option `--min-consensus-fraction` is used instead.
+- Added a new option, `--output-debug`, that will create a debug folder with multiple additional files that are primarily for debugging the results from HLA and CYP2D6 calling, but may be useful for researchers. This folder is subject to change as the underlying methods develop. Some of the initial files included:
+  - `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
+  - `cyp2d6_consensus.bam` - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The phase set tag (PS) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
+  - `cyp2d6_link_graph.svg` - A graphical representation of the connections present between CYP2D6 consensus segments.
+  - `hla_debug.json` - Contains the summary mapping information of each database entry to the generated HLA consensus sequences.
+
+## Fixed
+- Fixed an issue with `build` where CPIC genes with no known chromosome would cause an error and exit. These entries are now ignored with a warning.
+- Fixed an off-by-one error in the HLA gene region start coordinates. This has been corrected in the latest database release: `data/v0.13.0/pbstarphase_20240730.json.gz`
+
 # v0.12.0
 ## Changes
 - Hard-coded coordinates (GRCh38) for HLA-A, HLA-B, and CYP2D6 calling have been moved into the database file. Prior database versions without this new config information will automatically load the previously hard-coded values. This configuration is provided for transparency and experimentation in other reference coordinate systems, we do not recommend or support changing the provided default values.
