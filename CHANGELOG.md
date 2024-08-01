@@ -1,3 +1,11 @@
+# v0.13.1
+## Changes
+- For HLA genes, StarPhase would previously ignore any HLA allele definitions that were missing a DNA sequence in the database. StarPhase now allows these partial HLA allele definitions by default.
+- A new option was added to enable the previous behavior: `--hla-require-dna`. If this option is enabled, any HLA allele definition that is missing a DNA sequence will be ignored and never reported in StarPhase outputs.
+
+## Fixed
+- Fixed an issue where a _CYP2D6_ deletion allele (\*5) could be reported on the same haplotype as another allele. While this is biologically possible (e.g., deletion of one \*10 in a "\*10x2" haplotype), it is not considered a valid star-allele at this time. This combination will still show up in the debug log files, but it will get filtered in final reporting. For example: a "\*10+\*5" haplotype will now get reported as "\*10".
+
 # v0.13.0
 ## Changes
 - The algorithm for _HLA-A_ and _HLA-B_ has been modified to use a consensus-based approach to solve the alleles, a simpler version of the algorithm for _CYP2D6_.
