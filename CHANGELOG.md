@@ -1,3 +1,9 @@
+# v0.13.2
+## Fixed
+- Adjusted the alignment parameters for HLA mapping to reduce errors caused by soft-clipping of alignments near the end of a haplotype
+- Replaced a panic with an error message when variants are found in unexpected states of zygosity and phase (e.g., phased homozygous)
+- Debug messages for HLA calling have been adjusted to improve log reviewability
+
 # v0.13.1
 ## Changes
 - For HLA genes, StarPhase would previously ignore any HLA allele definitions that were missing a DNA sequence in the database. StarPhase now allows these partial HLA allele definitions by default.
