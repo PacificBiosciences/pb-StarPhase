@@ -1,3 +1,8 @@
+# v0.13.3
+## Fixed
+- Replaced a panic with an error message when low coverage datasets fail to identify any CYP2D6 haplotypes to chain together. These will have a "NO_MATCH" diplotype in the results.
+- Fixed a bug where duplicate consensus sequences in CYP2D6 could create a panic, duplicates are now flagged as FalseAlleles and ignored.
+
 # v0.13.2
 ## Fixed
 - Adjusted the alignment parameters for HLA mapping to reduce errors caused by soft-clipping of alignments near the end of a haplotype
