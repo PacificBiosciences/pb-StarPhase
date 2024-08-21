@@ -1,3 +1,18 @@
+# v0.14.0
+## Changes
+- HLA allele labeling has been updated to improve 4th-field accuracy: When two potential definitions are compared, we now restrict the initial comparison to _only_ the shared regions of the two haplotype sequence definitions (this is often different, especially for DNA sequences). In the event of a tie, we revert to the full-length allele definitions.
+- The HLA database configuration has been updated to include strand information for HLA genes. Defaults for _HLA-A_ and _HLA-B_ are set, so no database update is required. This modification will show in the next database release.
+- HLA debug consensus outputs will now be output on the strand the gene is located to improve matching to IMGT/HLA sequences. For example, _HLA-A_ is already on the forward strand so no change will be made. In contrast, _HLA-B_ is on the reverse strand so the consensus sequences will be reverse complemented in the output FASTA file.
+- **Breaking change**: _CYP2D6_ and the HLA genes now share a single debug BAM file through the `--output-debug` option: `debug_consensus.bam`
+  - The previous debug file for _CYP2D6_, `cyp2d6_consensus.bam`, has been removed from the outputs. The mappings from this file have been moved into the new `debug_consensus.bam` file.
+  - For both HLA genes, the BAM file contains alignments of the HLA consensus sequences and corresponding read sequences used to generate the consensus. Additionally, if the assigned haplotypes have DNA sequences in the database, those sequences are also aligned for comparison purposes.
+  - Previously deprecated option `--debug-hla-target` has been repurposed to allow for specification of additional HLA haplotypes to get mapped in this debug BAM. As with the assigned haplotypes, these must have a DNA sequence in the database to get mapped.
+
+## Fixed
+- Fixed an issue where CDF filter was not filtering properly for HLA genes
+- Fixed the CLI option syntax for `--hla-require-dna`
+- Removed deprecated `--output-cyp2d6-bam` option from the list of CLI options, this is now part of the `--output-debug` files
+
 # v0.13.3
 ## Fixed
 - Replaced a panic with an error message when low coverage datasets fail to identify any CYP2D6 haplotypes to chain together. These will have a "NO_MATCH" diplotype in the results.

@@ -300,6 +300,8 @@ The outputs contained in this folder are subject to change as the algorithms evo
 Here is a brief list of some of the current debug outputs:
 
 * `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
-* `cyp2d6_consensus.bam` - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The phase set tag (PS) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
 * `cyp2d6_link_graph.svg` - A graphical representation of the connections present between CYP2D6 consensus segments.
+* `debug_consensus.bam` - Contains debug mappings for the alignment-based genes
+  * _CYP2D6_ - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The haplotype tag (HP) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
+  * HLA genes - Contains mapped substrings from the reads that were used to generate HLA consensus sequences. Additionally contains the consensus sequences themselves and corresponding database entry if DNA sequence is available. Extra database haplotypes can be visualized by specifying the `--debug-hla-target` option. The haplotype tag (HP) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
 * `hla_debug.json` - Contains the summary mapping information of each database entry to the generated HLA consensus sequences.
