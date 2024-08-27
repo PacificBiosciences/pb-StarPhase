@@ -1,3 +1,11 @@
+# v0.14.1
+## Changes
+- Added a new output folder through the `--output-debug` option: `cyp2d6_igv_custom`. This folder contains an XML file describing an IGV session as well as the supporting data files to visualize full length alignments through the two constructed CYP2D6 haplotypes. For details, see the updated user docs.
+- Released an updated database file: `data/v0.14.1/pbstarphase_20240826.json.gz`
+
+## Fixed
+- Fixed some off-by-one errors in the coordinates for miscellaneous extra regions in CYP2D6. These caused tiny overlaps in the output BAM file described above, but otherwise did not have an impact on diplotyping accuracy.
+
 # v0.14.0
 ## Changes
 - HLA allele labeling has been updated to improve 4th-field accuracy: When two potential definitions are compared, we now restrict the initial comparison to _only_ the shared regions of the two haplotype sequence definitions (this is often different, especially for DNA sequences). In the event of a tie, we revert to the full-length allele definitions.
