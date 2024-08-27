@@ -300,6 +300,11 @@ The outputs contained in this folder are subject to change as the algorithms evo
 Here is a brief list of some of the current debug outputs:
 
 * `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
+* `cyp2d6_igv_custom` - Folder containing an IGV session and supporting data files for viewing the full-length reads aligned to the two CYP2D6 haplotypes for this dataset. Allows for manual detection of missed variants and inspection of direct evidence of copy-number in the reads. An example loaded session file should look similar to [example_session.png](../images/example_session.png). Exact formatting may vary depending on IGV version and user settings.
+  * `custom_igv_session.xml` - Contains the IGV session information that loads the following files. This is what most users should access first.
+  * `custom_alignments.bam` - Contains the full-length reads from the input BAM file re-aligned to the custom reference file.
+  * `custom_reference.fa` - Contains a single contig composed of the two haplotypes that were identified by StarPhase. The haplotypes are separated by a buffer region ("N"s).
+  * `custom_regions.bed` - Contains the region annotations for the custom reference. Consensus sequences are labeled using the same format as the other debug consensus files (e.g., `{consensus_index}_{consensus_label}`). For most consensus regions, we do not expect to see variants because they should be captured by the consensus algorithm (exceptions include homo-polymer variation). Un-labeled regions are directly copied from the reference genome and are more likely to contain variants.
 * `cyp2d6_link_graph.svg` - A graphical representation of the connections present between CYP2D6 consensus segments.
 * `debug_consensus.bam` - Contains debug mappings for the alignment-based genes
   * _CYP2D6_ - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The haplotype tag (HP) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
