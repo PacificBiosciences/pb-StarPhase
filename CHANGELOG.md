@@ -1,3 +1,7 @@
+# v0.14.2
+## Fixed
+- Fixed an issue where a CYP2D6 graph with no edges would lead to a panic during SVG graph visualization
+
 # v0.14.1
 ## Changes
 - Added a new output folder through the `--output-debug` option: `cyp2d6_igv_custom`. This folder contains an XML file describing an IGV session as well as the supporting data files to visualize full length alignments through the two constructed CYP2D6 haplotypes. For details, see the updated user docs.
