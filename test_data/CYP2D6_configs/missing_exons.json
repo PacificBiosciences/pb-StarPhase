@@ -1,0 +1,231 @@
+{
+    "cyp_coordinates": {
+      "CYP2D6": {
+        "chrom": "chr22",
+        "start": 42126259,
+        "end": 42132424
+      },
+      "CYP2D6_wfa_backbone": {
+        "chrom": "chr22",
+        "start": 42126259,
+        "end": 42132424
+      },
+      "CYP2D7": {
+        "chrom": "chr22",
+        "start": 42139965,
+        "end": 42145903
+      },
+      "REP6": {
+        "chrom": "chr22",
+        "start": 42123191,
+        "end": 42125963
+      },
+      "REP7": {
+        "chrom": "chr22",
+        "start": 42135343,
+        "end": 42138115
+      },
+      "link_region": {
+        "chrom": "chr22",
+        "start": 42132423,
+        "end": 42135344
+      },
+      "spacer": {
+        "chrom": "chr22",
+        "start": 42138114,
+        "end": 42139679
+      }
+    },
+    "cyp_regions": {
+      "CYP2D6": {
+        "exon1": {
+          "chrom": "chr22",
+          "start": 42130611,
+          "end": 42130810
+        },
+        "exon3": {
+          "chrom": "chr22",
+          "start": 42129032,
+          "end": 42129185
+        },
+        "exon4": {
+          "chrom": "chr22",
+          "start": 42128783,
+          "end": 42128944
+        },
+        "exon5": {
+          "chrom": "chr22",
+          "start": 42128173,
+          "end": 42128350
+        },
+        "exon6": {
+          "chrom": "chr22",
+          "start": 42127841,
+          "end": 42127983
+        },
+        "exon7": {
+          "chrom": "chr22",
+          "start": 42127446,
+          "end": 42127634
+        },
+        "exon8": {
+          "chrom": "chr22",
+          "start": 42126850,
+          "end": 42126992
+        },
+        "exon9": {
+          "chrom": "chr22",
+          "start": 42126498,
+          "end": 42126752
+        }
+      },
+      "CYP2D7": {
+        "exon1": {
+          "chrom": "chr22",
+          "start": 42144283,
+          "end": 42144483
+        },
+        "exon2": {
+          "chrom": "chr22",
+          "start": 42143409,
+          "end": 42143581
+        },
+        "exon3": {
+          "chrom": "chr22",
+          "start": 42142727,
+          "end": 42142880
+        },
+        "exon4": {
+          "chrom": "chr22",
+          "start": 42142478,
+          "end": 42142639
+        },
+        "exon5": {
+          "chrom": "chr22",
+          "start": 42141867,
+          "end": 42142044
+        },
+        "exon6": {
+          "chrom": "chr22",
+          "start": 42141533,
+          "end": 42141675
+        },
+        "exon7": {
+          "chrom": "chr22",
+          "start": 42141151,
+          "end": 42141339
+        },
+        "exon8": {
+          "chrom": "chr22",
+          "start": 42140554,
+          "end": 42140696
+        },
+        "exon9": {
+          "chrom": "chr22",
+          "start": 42140202,
+          "end": 42140456
+        }
+      }
+    },
+    "cyp2d6_star5_del": {
+      "chrom": "chr22",
+      "start": 42123191,
+      "end": 42135343
+    },
+    "cyp_translate": {
+      "CYP2D6::CYP2D7::exon2": "68",
+      "CYP2D6::CYP2D7::exon8": "61",
+      "CYP2D6::CYP2D7::intron1": "68",
+      "CYP2D6::CYP2D7::intron8": "63",
+      "CYP2D7::CYP2D6::exon2": "13",
+      "CYP2D7::CYP2D6::exon3": "13",
+      "CYP2D7::CYP2D6::exon4": "13",
+      "CYP2D7::CYP2D6::exon5": "13",
+      "CYP2D7::CYP2D6::exon6": "13",
+      "CYP2D7::CYP2D6::exon7": "13",
+      "CYP2D7::CYP2D6::exon8": "13",
+      "CYP2D7::CYP2D6::exon9": "13",
+      "CYP2D7::CYP2D6::intron1": "13",
+      "CYP2D7::CYP2D6::intron2": "13",
+      "CYP2D7::CYP2D6::intron3": "13",
+      "CYP2D7::CYP2D6::intron4": "13",
+      "CYP2D7::CYP2D6::intron5": "13",
+      "CYP2D7::CYP2D6::intron6": "13",
+      "CYP2D7::CYP2D6::intron7": "13",
+      "CYP2D7::CYP2D6::intron8": "13"
+    },
+    "inferred_connections": [
+      [
+        "*1",
+        "*1"
+      ],
+      [
+        "*10",
+        "*10"
+      ],
+      [
+        "*10",
+        "*36"
+      ],
+      [
+        "*146",
+        "*146"
+      ],
+      [
+        "*17",
+        "*17"
+      ],
+      [
+        "*2",
+        "*2"
+      ],
+      [
+        "*28",
+        "*28"
+      ],
+      [
+        "*29",
+        "*29"
+      ],
+      [
+        "*3",
+        "*3"
+      ],
+      [
+        "*35",
+        "*35"
+      ],
+      [
+        "*4",
+        "*4"
+      ],
+      [
+        "*4",
+        "*68"
+      ],
+      [
+        "*41",
+        "*41"
+      ],
+      [
+        "*43",
+        "*43"
+      ],
+      [
+        "*45",
+        "*45"
+      ],
+      [
+        "*6",
+        "*6"
+      ],
+      [
+        "*9",
+        "*9"
+      ]
+    ],
+    "unexpected_singletons": [
+      "*36",
+      "*68"
+    ]
+}

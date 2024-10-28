@@ -1,0 +1,103 @@
+[
+    {
+        "id": 777266,
+        "version": 58,
+        "genesymbol": "CACNA1S",
+        "name": "c.3257G>A",
+        "pharmvarid": null,
+        "matchesreferencesequence": false,
+        "structuralvariation": false,
+        "allele_location_value": [
+            {
+                "alleledefinitionid": 777266,
+                "locationid": 777261,
+                "variantallele": "T",
+                "version": 1,
+                "sequence_location": {
+                    "id": 777261,
+                    "version": 59,
+                    "name": "c.3257G>A",
+                    "chromosomelocation": "g.201060815C>T",
+                    "genelocation": "g.56752G>A",
+                    "proteinlocation": "p.R1086H",
+                    "genesymbol": "CACNA1S",
+                    "dbsnpid": "rs1800559",
+                    "position": 201060815
+                }
+            }
+        ]
+    },
+    {
+        "id": 777264,
+        "version": 58,
+        "genesymbol": "CACNA1S",
+        "name": "c.520C>T",
+        "pharmvarid": null,
+        "matchesreferencesequence": false,
+        "structuralvariation": false,
+        "allele_location_value": [
+            {
+                "alleledefinitionid": 777264,
+                "locationid": 777260,
+                "variantallele": "A",
+                "version": 1,
+                "sequence_location": {
+                    "id": 777260,
+                    "version": 59,
+                    "name": "c.520C>T",
+                    "chromosomelocation": "g.201091993G>A",
+                    "genelocation": "g.25574C>T",
+                    "proteinlocation": "p.R174W",
+                    "genesymbol": "CACNA1S",
+                    "dbsnpid": "rs772226819",
+                    "position": 201091993
+                }
+            }
+        ]
+    },
+    {
+        "id": 777262,
+        "version": 58,
+        "genesymbol": "CACNA1S",
+        "name": "Reference",
+        "pharmvarid": null,
+        "matchesreferencesequence": true,
+        "structuralvariation": false,
+        "allele_location_value": [
+            {
+                "alleledefinitionid": 777262,
+                "locationid": 777260,
+                "variantallele": "G",
+                "version": 1,
+                "sequence_location": {
+                    "id": 777260,
+                    "version": 59,
+                    "name": "c.520C>T",
+                    "chromosomelocation": "g.201091993G>A",
+                    "genelocation": "g.25574C>T",
+                    "proteinlocation": "p.R174W",
+                    "genesymbol": "CACNA1S",
+                    "dbsnpid": "rs772226819",
+                    "position": 201091993
+                }
+            },
+            {
+                "alleledefinitionid": 777262,
+                "locationid": 777261,
+                "variantallele": "C",
+                "version": 1,
+                "sequence_location": {
+                    "id": 777261,
+                    "version": 59,
+                    "name": "c.3257G>A",
+                    "chromosomelocation": "g.201060815C>T",
+                    "genelocation": "g.56752G>A",
+                    "proteinlocation": "p.R1086H",
+                    "genesymbol": "CACNA1S",
+                    "dbsnpid": "rs1800559",
+                    "position": 201060815
+                }
+            }
+        ]
+    }
+]

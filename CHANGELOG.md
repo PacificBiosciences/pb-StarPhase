@@ -1,3 +1,8 @@
+# v1.0.0
+## Changes
+- Source code is included in the GitHub repository
+- `LICENSE.md` has been updated to reflect terms and conditions of source code usage
+
 # v0.14.2
 ## Fixed
 - Fixed an issue where a CYP2D6 graph with no edges would lead to a panic during SVG graph visualization

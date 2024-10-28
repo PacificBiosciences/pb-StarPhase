@@ -1,0 +1,47 @@
+{
+  "database_metadata": {
+    "pbstarphase_version": "0.1.0-9ac34a4",
+    "cpic_version": "API-2023-09-05T14:03:45.314899420Z",
+    "build_time": "2023-09-05T14:03:45.314899420Z",
+    "hla_version" : "fake_version",
+    "pharmvar_version" : "fake_version"
+  },
+  "gene_entries": {
+    "MT-RNR1": {
+      "gene_name": "MT-RNR1",
+      "chromosome": "chr2",
+      "variants": {
+        "1104230": {
+          "name" : "faux",
+          "dbsnp_id": "rs1556422499",
+          "position": 13,
+          "alleles": [
+            "T",
+            "delT",
+            "delinsCC; delinsCCC; delinsCCCC; delinsCCCCC; delinsCCCCCC; delinsCCCCCCC"
+          ]
+        }
+      },
+      "defined_haplotypes": {
+        "961T>del": {
+          "haplotype": {
+            "1104230": "delT"
+          }
+        },
+        "961T>del+Cn": {
+          "haplotype": {
+            "1104230": "delinsCC; delinsCCC; delinsCCCC; delinsCCCCC; delinsCCCCCC; delinsCCCCCCC"
+          }
+        },
+        "Reference": {
+          "haplotype": {
+            "1104230": "T"
+          }
+        }
+      },
+      "reference_allele": "Reference"
+    }
+  },
+  "hla_sequences" : {},
+  "cyp2d6_gene_def" : {}
+}
