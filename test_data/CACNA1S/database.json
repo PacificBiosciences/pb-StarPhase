@@ -1,0 +1,56 @@
+{
+    "database_metadata": {
+      "pbstarphase_version": "0.1.0-9ac34a4",
+      "cpic_version": "API-2023-09-05T14:03:45.314899420Z",
+      "build_time": "2023-09-05T14:03:45.314899420Z",
+      "hla_version" : "fake_version",
+      "pharmvar_version" : "fake_version"
+    },
+    "gene_entries": {
+      "CACNA1S": {
+        "gene_name": "CACNA1S",
+        "chromosome": "chr1",
+        "variants": {
+          "777260": {
+            "name" : "faux",
+            "dbsnp_id": "rs772226819",
+            "position": 201091993,
+            "alleles": [
+              "G",
+              "A"
+            ]
+          },
+          "777261": {
+            "name" : "faux",
+            "dbsnp_id": "rs1800559",
+            "position": 201060815,
+            "alleles": [
+              "C",
+              "T"
+            ]
+          }
+        },
+        "defined_haplotypes": {
+          "Reference": {
+            "haplotype": {
+              "777260": "G",
+              "777261": "C"
+            }
+          },
+          "c.3257G>A": {
+            "haplotype": {
+              "777261": "T"
+            }
+          },
+          "c.520C>T": {
+            "haplotype": {
+              "777260": "A"
+            }
+          }
+        },
+        "reference_allele": "Reference"
+      }
+    },
+    "hla_sequences" : {},
+    "cyp2d6_gene_def" : {}
+}

@@ -1,0 +1,74 @@
+{
+  "database_metadata": {
+    "pbstarphase_version": "0.1.0-9ac34a4",
+    "cpic_version": "API-2023-09-05T14:03:45.314899420Z",
+    "build_time": "2023-09-05T14:03:45.314899420Z",
+    "hla_version" : "fake_version",
+    "pharmvar_version" : "fake_version"
+  },
+  "gene_entries": {
+    "UGT1A1": {
+      "gene_name": "UGT1A1",
+      "chromosome": "chr2",
+      "variants": {
+        "779484": {
+          "name" : "faux",
+          "dbsnp_id": "faux-rs887829",
+          "position": 2,
+          "alleles": [
+            "C",
+            "T"
+          ]
+        },
+        "1000510": {
+          "name" : "faux",
+          "dbsnp_id": "faux-rs3064744",
+          "position": 11,
+          "alleles": [
+            "AGT(3)",
+            "AGT(4)",
+            "AGT(5)"
+          ]
+        }
+      },
+      "defined_haplotypes": {
+        "*1": {
+          "haplotype": {
+            "779484": "C",
+            "1000510": "AGT(3)"
+          }
+        },
+        "*28": {
+          "haplotype": {
+            "1000510": "AGT(4)"
+          }
+        },
+        "*37": {
+          "haplotype": {
+            "1000510": "AGT(5)"
+          }
+        },
+        "*80": {
+          "haplotype": {
+            "779484": "T"
+          }
+        },
+        "*80+*28": {
+          "haplotype": {
+            "779484": "T",
+            "1000510": "AGT(4)"
+          }
+        },
+        "*80+*37": {
+          "haplotype": {
+            "779484": "T",
+            "1000510": "AGT(5)"
+          }
+        }
+      },
+      "reference_allele": "*1"
+    }
+  },
+  "hla_sequences" : {},
+  "cyp2d6_gene_def" : {}
+}
