@@ -30,6 +30,11 @@ We are still tweaking the input and output file formats and making changes that 
 * [Methods](docs/methods.md)
 * [Performance](docs/performance.md)
 
+## Citation
+If you use StarPhase, please cite our bioRxiv pre-print:
+
+[Holt, J. M. et al. (2024). StarPhase: Comprehensive Phase-Aware Pharmacogenomic Diplotyper for Long-Read Sequencing Data. _bioRxiv_, 2024-12.](https://doi.org/10.1101/2024.12.10.627527)
+
 ## Need help?
 If you notice any missing features, bugs, or need assistance with analyzing the output of pb-StarPhase, 
 please don't hesitate to open a GitHub issue.
