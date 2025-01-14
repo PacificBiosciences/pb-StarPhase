@@ -1,3 +1,7 @@
+# v1.0.1
+## Fixed
+- Fixed an issue where a homozygous deletion in CYP2D6 (\*5/\*5) was not considered a valid diplotype when using `--normalize-d6-only`
+
 # v1.0.0
 ## Changes
 - Source code is included in the GitHub repository

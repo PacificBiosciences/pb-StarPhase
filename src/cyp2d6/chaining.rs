@@ -469,19 +469,32 @@ pub fn find_best_chain_pair(
                 .map(|c| (c as f64) / (total_hap_count as f64))
                 .collect();
 
-            if reduced_probs.is_empty() || reduced_coverage.iter().sum::<u64>() == 0 {
-                // this happens when we have a haplotype with no actual D6 alleles, it's not a valid result
-                continue;
-            }
-            assert_eq!(reduced_probs.len(), reduced_coverage.len());
+            let mn_llh_penalty = if reduced_probs.is_empty() || reduced_coverage.iter().sum::<u64>() == 0 {
+                // this happens when we have a haplotype with no actual D6 alleles, it's not a valid result usually
+                // check for exception
+                if !normalize_all_alleles &&
+                    possible_chains[i].iter().any(|&hap1| hap_labels[hap1].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) &&
+                    possible_chains[j].iter().any(|&hap2| hap_labels[hap2].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) {
+                    // normalizing by *5 is disabled AND *5 is in hap1 AND *5 is in hap2
+                    // combined with having no normalized coverage, this is a *5/*5 result, which is valid
+                    // no penalty from the likelihood here
+                    0.0
+                } else {
+                    // did not match an exception, invalid result
+                    continue;
+                }
+            } else {
+                // standard path, we have coverage on *something*
+                assert_eq!(reduced_probs.len(), reduced_coverage.len());
             
-            /*
-            // turns out Multinomial is not using all ln format under the hood so it overflows, we need a custom one
-            let total_coverage: u64 = reduced_coverage.iter().sum();
-            let multinomial = Multinomial::new(&reduced_probs, total_coverage)?;
-            let mn_llh_penalty = -multinomial.ln_pmf(&reduced_coverage);
-            */
-            let mn_llh_penalty = multinomial_ln_pmf(&reduced_probs, &reduced_coverage).abs();
+                /*
+                // turns out Multinomial is not using all ln format under the hood so it overflows, we need a custom one
+                let total_coverage: u64 = reduced_coverage.iter().sum();
+                let multinomial = Multinomial::new(&reduced_probs, total_coverage)?;
+                let mn_llh_penalty = -multinomial.ln_pmf(&reduced_coverage);
+                */
+                multinomial_ln_pmf(&reduced_probs, &reduced_coverage).abs()
+            };
             
             // check if we have any unexpected chain pairs at the CYP2D level
             let expectation_mismatch = if ignore_chain_label_limits { 0 } 
@@ -1029,5 +1042,36 @@ mod tests {
 
         // possible future TODO: we have two other error types, I don't think we can actually reach them though
         //                       we will lazily add if a user manages to do it somehow
+    }
+
+    #[test]
+    fn test_double5_targeted() {
+        // tests a collaborator-reported issue where the diplotype is *5/*5 (double deletion) and they have targeted settings on
+        let cyp2d6_config = Cyp2d6Config::default();
+        
+        // we need a couple reads with *5
+        let mut obs_chains: BTreeMap<String, Vec<Vec<usize>>> = Default::default();
+        let mut chain_scores: BTreeMap<String, Vec<SequenceWeights>> = Default::default();
+        for x in 0..2 {
+            let qname = format!("read{x}");
+            let chains = vec![vec![0]];
+            obs_chains.insert(qname.clone(), chains);
+
+            let weights = vec![vec![(0, 1.0)]]; // no edit, perfect overlap
+            chain_scores.insert(qname, weights);
+        }
+
+        let hap_labels = vec![
+            Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6Deletion, None)
+        ];
+        let infer_connections = true; // targeted mode has inference on, but does not matter here
+        let normalize_all_alleles = false; // works with true, error popped up with false
+        let penalties = Default::default();
+        let ignore_chain_label_limits = false;
+
+        // we expect Ok(0/0) indicated *5/*5 homozygote; we were getting Err though
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, infer_connections, normalize_all_alleles, penalties, ignore_chain_label_limits).unwrap();
+        assert_eq!(chain_result, vec![vec![0], vec![0]]);
+        assert!(danglers.is_empty());
     }
 }
