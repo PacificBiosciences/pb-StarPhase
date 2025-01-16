@@ -228,7 +228,7 @@ impl PgxVariantDetails {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct PgxMappingDetails {
     /// Read mapping ID
     read_qname: String,

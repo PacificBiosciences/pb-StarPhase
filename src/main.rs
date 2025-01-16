@@ -33,8 +33,18 @@ fn run_build(settings: BuildSettings) {
     // okay, now we can check all the other settings
     let cli_settings: BuildSettings = check_build_settings(settings);
 
+    // pre-load the reference genome also
+    info!("Loading reference genome from {:?}...", cli_settings.reference_filename);
+    let reference_genome: ReferenceGenome = match ReferenceGenome::from_fasta(&cli_settings.reference_filename) {
+        Ok(rg) => rg,
+        Err(e) => {
+            error!("Error while loading reference genome file: {e}");
+            std::process::exit(exitcode::IOERR);
+        }
+    };
+
     // all the work
-    let pgx_db: PgxDatabase = match pbstarphase::build_database::pull_database_cpic_api() {
+    let pgx_db: PgxDatabase = match pbstarphase::build_database::pull_database_cpic_api(&reference_genome) {
         Ok(pdb) => pdb,
         Err(e) => {
             error!("Error while building CPIC database: {e}");

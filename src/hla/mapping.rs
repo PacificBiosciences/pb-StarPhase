@@ -5,7 +5,7 @@ use std::ops::AddAssign;
 use crate::data_types::mapping::{MappingScore, MappingStats};
 
 /// Wraps the mapping stats for read to an HLA locus
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct HlaMappingStats {
     /// the cDNA mapping stats
     cdna_stats: Option<MappingStats>,

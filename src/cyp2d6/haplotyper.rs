@@ -3,7 +3,6 @@ use hiphase::data_types::variants::Variant;
 use hiphase::wfa_graph::{NodeAlleleMap, WFAGraph, WFAResult};
 use itertools::Itertools;
 use log::{debug, trace};
-use minimap2::Aligner;
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use simple_error::bail;
@@ -13,6 +12,7 @@ use crate::cyp2d6::definitions::{Cyp2d6Config, generate_cyp_hybrids};
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
 use crate::data_types::database::PgxDatabase;
 use crate::data_types::mapping::MappingStats;
+use crate::util::mapping::standard_hifi_aligner;
 
 /// The primary interface for identifying regions of interest within a sequence.
 /// Can be used to find all base type regions (e.g. CYP2D6, link_region, etc.) within a longer sequence, or to find specific full-length star-alleles (e.g., CYP2D6*4.001).
@@ -150,9 +150,7 @@ impl<'a> Cyp2d6Extractor<'a> {
 
         // these get converted into our AlleleMapping when finished
         let mut region_mappings: Vec<(Cyp2d6RegionLabel, std::ops::Range<usize>, MappingStats)> = vec![];
-        let dna_aligner: Aligner = Aligner::builder()
-            .map_hifi()
-            .with_cigar()
+        let dna_aligner = standard_hifi_aligner()
             .with_seq(search_sequence.as_bytes())?;
 
         // this is the maximum edit penalty we allow
@@ -197,7 +195,7 @@ impl<'a> Cyp2d6Extractor<'a> {
             // now find all of the mappings of this sequence
             let mappings = dna_aligner.map(
                 target_seq.as_bytes(),
-                output_cigar, output_md, max_frag_len, extra_flags.clone()
+                output_cigar, output_md, max_frag_len, extra_flags, None
             )?;
             
             if mappings.is_empty() {
@@ -206,6 +204,9 @@ impl<'a> Cyp2d6Extractor<'a> {
 
             // it's possible to get multiple mappings
             for m in mappings.iter() {
+                // these rarely happen, seemingly in supplemental mappings
+                let reverse_mapping = m.strand == minimap2::Strand::Reverse;
+                
                 // all results are relative to the `target_seq`; aka, the D6/D7 allele
                 let nm = m.alignment.as_ref().unwrap().nm as usize;
                 let seq_len = target_seq.len();
@@ -229,6 +230,11 @@ impl<'a> Cyp2d6Extractor<'a> {
                 if custom_score.score() > max_ed_frac { // && target_id == "CYP2D6*5" {
                     // ignore this one
                     debug!("\tIgnoring {target_id}: {}-{} => {}", m.target_start, m.target_end, mapping_stats.custom_score_string(penalize_star5));
+                } else if reverse_mapping {
+                    // TODO: we currently ignore these due to complexity downstream, do we want to add them in the future?
+                    // we would need to rev-comp the sequence in the consensus and also reverse the order when chaining
+                    // unclear how we handle a read with both positive and negative findings
+                    debug!("\tIgnoring reverse strand mapping in {target_id}: {}-{} => {}", m.target_start, m.target_end, mapping_stats.custom_score_string(penalize_star5));
                 } else {
                     debug!("\t{target_id}: {}-{} => {}", m.target_start, m.target_end, mapping_stats.custom_score_string(penalize_during_search));
                     uncollapsed_regions.push((
@@ -379,15 +385,13 @@ impl<'a> Cyp2d6Extractor<'a> {
         let extra_flags = None;
 
         // now build out a mapper so we make sure we have the right coordinates
-        let dna_aligner: Aligner = Aligner::builder()
-            .map_hifi()
-            .with_cigar()
+        let dna_aligner = standard_hifi_aligner()
             .with_seq(graph_backbone.as_bytes())?;
 
         // now find all of the mappings of our consensus onto this backbone
         let mappings = dna_aligner.map(
             sequence,
-            output_cigar, output_md, max_frag_len, extra_flags.clone()
+            output_cigar, output_md, max_frag_len, extra_flags, None
         )?;
 
         // we *should* only find one, but that does not always happen

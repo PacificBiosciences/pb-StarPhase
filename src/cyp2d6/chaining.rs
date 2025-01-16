@@ -1,6 +1,5 @@
 
 use log::{debug, log_enabled, trace};
-use minimap2::Aligner;
 use simple_error::bail;
 use std::collections::BTreeMap;
 use waffle_con::multi_consensus::MultiConsensus;
@@ -10,6 +9,7 @@ use crate::cyp2d6::definitions::Cyp2d6Config;
 use crate::cyp2d6::errors::{CallerError, CallerWarning};
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
 use crate::data_types::mapping::MappingStats;
+use crate::util::mapping::standard_hifi_aligner;
 use crate::util::stats::multinomial_ln_pmf;
 
 /// This is a wrapper that will be the same length as the number of identified consensus sequences.
@@ -25,9 +25,7 @@ pub type SequenceWeights = Vec<(usize, f64)>;
 /// * `consensus` - the multi-consensus containing all allowed consensuses
 /// * `con_labels` - human readable labels for the consensuses (e.g. star-alleles)
 pub fn weight_sequence(sequence: &str, consensus: &MultiConsensus, con_labels: &[Cyp2d6RegionLabel]) -> Result<SequenceWeights, Box<dyn std::error::Error>> {
-    let dna_aligner: Aligner = Aligner::builder()
-        .map_hifi()
-        .with_cigar()
+    let dna_aligner = standard_hifi_aligner()
         .with_seq(sequence.as_bytes())?;
     let seq_len = sequence.len();
 
@@ -57,7 +55,7 @@ pub fn weight_sequence(sequence: &str, consensus: &MultiConsensus, con_labels: &
         // first, map the sequence
         let mappings = dna_aligner.map(
             con_seq,
-            output_cigar, output_md, max_frag_len, extra_flags.clone()
+            output_cigar, output_md, max_frag_len, extra_flags, None
         )?;
 
         for m in mappings.iter() {

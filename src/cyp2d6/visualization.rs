@@ -1,7 +1,6 @@
 
 use itertools::Itertools;
 use log::warn;
-use minimap2::Aligner;
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use simple_error::bail;
 use std::collections::BTreeMap;
@@ -11,7 +10,8 @@ use waffle_con::multi_consensus::MultiConsensus;
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
 use crate::data_types::coordinates::Coordinates;
 use crate::data_types::database::PgxDatabase;
-use crate::visualization::igv_session_writer::{BUFFER_LEN, CUSTOM_CONTIG};
+use crate::util::mapping::standard_hifi_aligner;
+use crate::visualization::igv_session_writer::{BUFFER_LEN, CONTIG_POSTFIX};
 
 /// Accepts information about available alleles as well as the reads spanning those alleles and converts it into a visual graph.
 /// # Arguments
@@ -129,6 +129,8 @@ pub fn generate_debug_graph(hap_labels: &[Cyp2d6RegionLabel], chain_frequency: &
 
 /// This is just a wrapper for the output from the next function, mainly to make clippy happy.
 pub struct CustomReference {
+    /// name for the contig
+    pub contig_name: String,
     /// the full custom sequence
     pub sequence: String,
     /// list of coordinates / label pairs
@@ -149,10 +151,12 @@ pub fn create_custom_cyp2d6_reference(
     reference_genome: &ReferenceGenome, database: &PgxDatabase,
     consensus: &MultiConsensus, hap_labels: &[Cyp2d6RegionLabel], best_result: &[Vec<usize>]
 ) -> Result<CustomReference, Box<dyn std::error::Error>> {
+    // gene name followed by a post-fix for easier searching
+    let contig_name = format!("CYP2D6_{CONTIG_POSTFIX}");
+    
     // generic buffer between regions
     let buffer_sequence: String = "N".repeat(BUFFER_LEN);
-    // let d6_surrounding_buffer: usize = 10000; // TODO: do we want upstream/downstream windows?
-
+    
     // start with a buffer
     let mut ret = buffer_sequence.clone();
     let mut regions: Vec<(Coordinates, String)> = vec![];
@@ -163,7 +167,7 @@ pub fn create_custom_cyp2d6_reference(
         let hap_sequence = std::str::from_utf8(consensus.consensuses()[hap_index].sequence())?;
 
         // add the coordinates of what was added
-        let coordinates = Coordinates::new(CUSTOM_CONTIG.to_string(),
+        let coordinates = Coordinates::new(contig_name.clone(),
             ret.len() as u64,
             (ret.len() + hap_sequence.len()) as u64
         );
@@ -200,9 +204,7 @@ pub fn create_custom_cyp2d6_reference(
                 let align_sequence = &ret[align_start..];
                 
                 // build the aligner to our smaller tail region
-                let dna_aligner: Aligner = Aligner::builder()
-                    .map_hifi()
-                    .with_cigar()
+                let dna_aligner = standard_hifi_aligner()
                     .with_seq(align_sequence.as_bytes())?;
 
                 // we only need cigar and md for debugging
@@ -220,7 +222,7 @@ pub fn create_custom_cyp2d6_reference(
                 // first, map the sequence
                 let mappings = dna_aligner.map(
                     query_sequence,
-                    output_cigar, output_md, max_frag_len, extra_flags
+                    output_cigar, output_md, max_frag_len, extra_flags, None
                 )?;
 
                 // finally search for a matching overlap and save it if we find one
@@ -247,7 +249,7 @@ pub fn create_custom_cyp2d6_reference(
             let hap_sequence = std::str::from_utf8(&consensus.consensuses()[hap_index].sequence()[overlap_len..])?;
 
             // add the coordinates of what was added
-            let coordinates = Coordinates::new(CUSTOM_CONTIG.to_string(),
+            let coordinates = Coordinates::new(contig_name.to_string(),
                 (ret.len() - overlap_len) as u64,
                 (ret.len() + hap_sequence.len()) as u64
             );
@@ -267,6 +269,7 @@ pub fn create_custom_cyp2d6_reference(
     // add a buffer at the end also
     ret.push_str(&buffer_sequence);
     Ok(CustomReference {
+        contig_name,
         sequence: ret,
         regions
     })

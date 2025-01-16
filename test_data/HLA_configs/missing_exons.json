@@ -1,95 +1,29 @@
 {
-    "hla_coordinates": {
+  "gene_collection" : {
+    "version" : "test",
+    "gene_dict" : {
       "HLA-A": {
-        "chrom": "chr6",
-        "start": 29942254,
-        "end": 29945870
+        "gene_name" : "HLA-A",
+        "coordinates" : {
+          "chrom": "chr6",
+          "start": 29942254,
+          "end": 29945870
+        },
+        "is_forward_strand" : true,
+        "transcript_id" : null,
+        "exons" : []
       },
       "HLA-B": {
-        "chrom": "chr6",
-        "start": 31353362,
-        "end": 31357442
+        "gene_name" : "HLA-B",
+        "coordinates" : {
+          "chrom": "chr6",
+          "start": 31353362,
+          "end": 31357442
+        },
+        "is_forward_strand" : false,
+        "transcript_id" : null,
+        "exons" : []
       }
-    },
-    "hla_exons": {
-      "HLA-A": [
-        {
-          "chrom": "chr6",
-          "start": 29942531,
-          "end": 29942626
-        },
-        {
-          "chrom": "chr6",
-          "start": 29942756,
-          "end": 29943026
-        },
-        {
-          "chrom": "chr6",
-          "start": 29943267,
-          "end": 29943543
-        },
-        {
-          "chrom": "chr6",
-          "start": 29944121,
-          "end": 29944397
-        },
-        {
-          "chrom": "chr6",
-          "start": 29944499,
-          "end": 29944616
-        },
-        {
-          "chrom": "chr6",
-          "start": 29945058,
-          "end": 29945091
-        },
-        {
-          "chrom": "chr6",
-          "start": 29945233,
-          "end": 29945281
-        },
-        {
-          "chrom": "chr6",
-          "start": 29945450,
-          "end": 29945870
-        }
-      ],
-      "HLA-B": [
-        {
-          "chrom": "chr6",
-          "start": 31354478,
-          "end": 31354526
-        },
-        {
-          "chrom": "chr6",
-          "start": 31354632,
-          "end": 31354665
-        },
-        {
-          "chrom": "chr6",
-          "start": 31355106,
-          "end": 31355223
-        },
-        {
-          "chrom": "chr6",
-          "start": 31355316,
-          "end": 31355592
-        },
-        {
-          "chrom": "chr6",
-          "start": 31356166,
-          "end": 31356442
-        },
-        {
-          "chrom": "chr6",
-          "start": 31356687,
-          "end": 31356957
-        },
-        {
-          "chrom": "chr6",
-          "start": 31357085,
-          "end": 31357179
-        }
-      ]
     }
+  }
 }

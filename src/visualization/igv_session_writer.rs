@@ -1,6 +1,7 @@
 
 use log::debug;
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
+use simple_error::bail;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -8,8 +9,9 @@ use crate::data_types::coordinates::Coordinates;
 use crate::util::file_io::save_fasta;
 use crate::visualization::debug_bam_writer::DebugBamWriter;
 
+// the buffer spacing we put around each side of a consensus sequence
 pub const BUFFER_LEN: usize = 1000;
-pub const CUSTOM_CONTIG: &str = "custom_contig";
+pub const CONTIG_POSTFIX: &str = "custom_contig";
 
 const SESSION_PATH: &str = "custom_igv_session.xml";
 const REFERENCE_PATH: &str = "custom_reference.fa";
@@ -25,23 +27,51 @@ pub struct IgvSessionWriter {
     /// Our regions in the reference genome
     regions: Vec<(Coordinates, String)>,
     /// Collection of unmapped records we will map
-    unmapped_records: Vec<rust_htslib::bam::Record>
+    unmapped_records: BTreeMap<String, Vec<rust_htslib::bam::Record>>,
+    /// If true, adds pre-config on BAM visuals for inspection
+    preconfig_bam: bool
 }
 
 impl IgvSessionWriter {
-    /// Creates a new session writer with the given collection of information
+    /// Creates a new session writer with no meaningful data. Add data via the `add_custom_region` functionality.
     /// # Arguments
     /// * `session_folder` - the folder we will eventually save everything to
-    /// * `reference_genome` - the reference genome we will align to and write to FASTA
-    /// # Errors
-    /// * None so far
-    pub fn new(session_folder: PathBuf, reference_genome: ReferenceGenome, regions: Vec<(Coordinates, String)>, unmapped_records: Vec<rust_htslib::bam::Record>) -> Self {
+    /// * `preconfig_bam` - if True, this will add some debug rendering options to the BAM XML config
+    pub fn new(session_folder: PathBuf, preconfig_bam: bool) -> Self {
+        let reference_genome = ReferenceGenome::empty_reference();
+        let regions = vec![];
+        let unmapped_records = Default::default();
         IgvSessionWriter {
             session_folder,
             reference_genome,
             regions,
-            unmapped_records
+            unmapped_records,
+            preconfig_bam
         }
+    }
+
+    /// Adds a new region to our dataset for mapping
+    /// # Arguments
+    /// * `region_name` - the contig name to add
+    /// * `region_sequence` - the sequence to add, it is recommended to have a `BUFFER_LEN` of Ns at the start / end and in-between anything that should be separated
+    /// * `labels` - the labels for this region
+    /// * `unmapped_records` - the records that will get mapped to this region
+    pub fn add_custom_region(&mut self, region_name: String, region_sequence: &str, region_labels: &[(Coordinates, String)], unmapped_records: Vec<rust_htslib::bam::Record>) -> Result<(), Box<dyn std::error::Error>> {
+        // this will throw an error if the region already exists, so no need to check here
+        self.reference_genome.add_contig(region_name.clone(), region_sequence)?;
+
+        // add the regions with labels; we need to check the chrom matches on each
+        for rl in region_labels.iter() {
+            if rl.0.chrom() != region_name {
+                bail!("Region {rl:?} is not on correct contig: {region_name}");
+            }
+        }
+        self.regions.extend_from_slice(region_labels);
+
+        // lastly, add the unmapped records with the corresponding contig
+        assert!(self.unmapped_records.insert(region_name, unmapped_records).is_none());
+
+        Ok(())
     }
 
     /// Attempts to save all the data that has been provided to the session writer
@@ -88,13 +118,16 @@ impl IgvSessionWriter {
     }
 
     /// This will save the regions of interest to a BED file, which is then overlaid in IGV
-    fn save_regions_bed(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn save_regions_bed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let regions_filename = self.session_folder.join(REGIONS_PATH);
         debug!("Creating custom regions file at {regions_filename:?}");
 
         let mut bed_writer = csv::WriterBuilder::new()
             .delimiter(b'\t')
             .from_path(regions_filename)?;
+
+        // prior to writing, sort them
+        self.regions.sort();
 
         // chrom start end label
         for (coordinate, label) in self.regions.iter() {
@@ -119,14 +152,16 @@ impl IgvSessionWriter {
         // initial the writer with our custom genome
         let mut debug_bam_writer = DebugBamWriter::new(bam_filename, &self.reference_genome)?;
 
-        // map all the reads to it
-        let chrom_len = self.reference_genome.get_full_chromosome(CUSTOM_CONTIG).len();
-        let target_region = Coordinates::new(
-            CUSTOM_CONTIG.to_string(),
-            BUFFER_LEN as u64,
-            (chrom_len - BUFFER_LEN) as u64
-        );
-        debug_bam_writer.map_records_to_region(&self.unmapped_records, &target_region)?;
+        for (contig_name, unmapped_records) in self.unmapped_records.iter() {
+            // map all the reads to it
+            let chrom_len = self.reference_genome.get_full_chromosome(contig_name).len();
+            let target_region = Coordinates::new(
+                contig_name.clone(),
+                0_u64,
+                chrom_len as u64
+            );
+            debug_bam_writer.map_records_to_region(unmapped_records, &target_region)?;
+        }
 
         // write all the records we got
         debug_bam_writer.write_all_records()
@@ -192,10 +227,33 @@ impl IgvSessionWriter {
         ];
         for track_attributes in alignment_tracks.into_iter() {
             let mut track = BytesStart::new("Track");
+            let mut is_bam_track = false;
             for ta in track_attributes.into_iter() {
                 track.push_attribute(ta);
+
+                if ta.1 == "custom_alignments.bam" {
+                    is_bam_track = true;
+                }
             }
-            writer.write_event(Event::Empty(track))?;
+
+            if self.preconfig_bam && is_bam_track {
+                // open it
+                writer.write_event(Event::Start(track))?;
+    
+                // add the custom guts: <RenderOptions groupByOption="PHASE" hideSmallIndels="false" quickConsensusMode="false"/>
+                let mut render_options = BytesStart::new("RenderOptions");
+                render_options.push_attribute(("groupByOption", "PHASE"));
+                render_options.push_attribute(("hideSmallIndels", "false"));
+                render_options.push_attribute(("quickConsensusMode", "false"));
+                writer.write_event(Event::Empty(render_options))?;
+    
+                // close it
+                writer.write_event(Event::End(BytesEnd::new("Track")))?;
+    
+            } else {
+                // just write a basic event
+                writer.write_event(Event::Empty(track))?;
+            }
         }
 
         writer.write_event(Event::End(BytesEnd::new("Panel")))?;

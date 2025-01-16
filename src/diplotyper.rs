@@ -14,9 +14,10 @@ use crate::cyp2d6::caller::diplotype_cyp2d6;
 use crate::data_types::database::{PgxDatabase, PgxGene, PgxVariant};
 use crate::data_types::normalized_variant::{Genotype, NormalizedGenotype, NormalizedVariant, NormalizedPgxHaplotype};
 use crate::data_types::pgx_diplotypes::{PgxDiplotypes, PgxGeneDetails, PgxVariantDetails, Diplotype};
-use crate::hla::caller::diplotype_hla;
+use crate::hla::caller::{diplotype_hla_batch, diplotype_hla};
 use crate::util::file_io::load_file_lines;
 use crate::visualization::debug_bam_writer::DebugBamWriter;
+use crate::visualization::igv_session_writer::IgvSessionWriter;
 
 /// This is the main function to call all of the diplotypes.
 /// It handles all the VCF parsing and variant normalization.
@@ -132,12 +133,16 @@ pub fn call_diplotypes(
             None => None
         };
 
+        let mut debug_custom_writer: Option<IgvSessionWriter> = cli_settings.debug_folder.as_ref().map(|debug_folder| {
+            let extension = "hla_igv_custom";
+            let session_folder = debug_folder.join(extension);
+            IgvSessionWriter::new(session_folder, true)
+        });
+
         if !cli_settings.debug_skip_hla {
-            // this is the initial HLA list
-            let initial_hla_list = [
-                "HLA-A".to_string(),
-                "HLA-B".to_string()
-            ];
+            // the HLA list now comes from the database config, no longer hard coded
+            let initial_hla_list: Vec<String> = database.hla_config().gene_names()
+                .cloned().collect();
 
             // filter out anything that is excluded due to CLI parameters
             let final_hla_list: Vec<String> = initial_hla_list.into_iter()
@@ -162,14 +167,28 @@ pub fn call_diplotypes(
             // only call this if something is in the list to diplotype
             if !final_hla_list.is_empty() {
                 // user gave us BAM files, so lets add in the HLA genes we have ready
-                let hla_calls = diplotype_hla(
-                    &final_hla_list, 
-                    database,
-                    bam_fns, 
-                    reference_genome.unwrap(),
-                    debug_bam_writer.as_mut(),
-                    cli_settings
-                )?;
+                let batch_diplotyping = !cli_settings.hla_revert_method;
+                let hla_calls = if batch_diplotyping {
+                    diplotype_hla_batch(
+                        &final_hla_list,
+                        database,
+                        bam_fns,
+                        reference_genome.unwrap(),
+                        debug_bam_writer.as_mut(),
+                        debug_custom_writer.as_mut(),
+                        cli_settings
+                    )?
+                } else {
+                    // old method that has only been tested on A and B
+                    diplotype_hla(
+                        &final_hla_list,
+                        database,
+                        bam_fns,
+                        reference_genome.unwrap(),
+                        debug_bam_writer.as_mut(),
+                        cli_settings
+                    )?
+                };
 
                 // add in each result, insert will make sure we do not duplicate
                 for (gene_name, gene_details) in hla_calls.into_iter() {
@@ -230,6 +249,17 @@ pub fn call_diplotypes(
                 }
             }
         }
+
+        if let Some(dcw) = debug_custom_writer.as_mut() {
+            match dcw.write_session() {
+                Ok(()) => {},
+                Err(e) => {
+                    error!("Error while writing HLA custom session: {e}");
+                    error!("Continuing processess...");
+                }
+            }
+        }
+
     } else {
         info!("No BAM files were provided, all alignment based diplotyping was skipped.");
     }

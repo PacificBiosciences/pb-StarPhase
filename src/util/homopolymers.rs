@@ -8,24 +8,29 @@ use itertools::Itertools;
 /// * if String::from_utf8 fails
 pub fn hpc(sequence: &str) -> Result<String, std::string::FromUtf8Error> {
     String::from_utf8(
-        sequence.as_bytes().iter()
-            .dedup()
-            .cloned()
-            .collect::<Vec<u8>>()
+        hpc_bytes(sequence.as_bytes())
     )
 }
 
+/// This is a generic HPC for any type that can be compared & cloned
+/// # Arguments
+/// * `sequence` - the sequence to run HPC on
+pub fn hpc_bytes<T: std::cmp::PartialEq + Clone>(sequence: &[T]) -> Vec<T> {
+    sequence.iter()
+        .dedup()
+        .cloned()
+        .collect::<Vec<T>>()
+}
 
 /// This will take a sequence and an index and return the new index in a homo-polymer compressed version.
 /// # Arguments
 /// * `sequence` - the sequence to run HPC on
 /// * `position` - the position we want to find in the new HPC
-pub fn hpc_pos(sequence: &str, position: usize) -> usize {
+pub fn hpc_pos<T: std::cmp::PartialEq>(sequence: &[T], position: usize) -> usize {
     let mut total_length = 0;
     let mut offset = 0;
-    for (_k, g) in &sequence.as_bytes().iter()
-        .group_by(|&&v| v) { // creates runs
-        let l = g.count(); // get the run length
+
+    for (l, _v) in sequence.iter().dedup_with_count() {
         total_length += l;
         if position < total_length {
             break;
@@ -50,7 +55,7 @@ pub fn hpc_with_guide(sequence: &str, guide_sequence: &str, guide_offset: usize)
     let hpc_sequence = hpc(sequence)?;
 
     // now figure out where this should start in the guide sequence
-    let hpc_guide_offset = hpc_pos(guide_sequence, guide_offset);
+    let hpc_guide_offset = hpc_pos(guide_sequence.as_bytes(), guide_offset);
     
     // now solve the prefix and append it
     // let prefix = String::from_utf8(vec![b'*'; hpc_guide_offset])?;
@@ -82,7 +87,7 @@ mod tests {
                 b'T' => 3,
                 _ => panic!("should not happen")
             };
-            assert_eq!(expected, hpc_pos(sequence, i));
+            assert_eq!(expected, hpc_pos(sequence.as_bytes(), i));
         }
     }
 

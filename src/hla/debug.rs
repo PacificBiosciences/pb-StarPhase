@@ -38,7 +38,7 @@ impl HlaDebug {
 }
 
 /// Wrapper for an individual read stats
-#[derive(Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ReadMappingStats {
     /// The best matching ID
     best_match_id: Option<String>,
@@ -99,7 +99,7 @@ impl ReadMappingStats {
 }
 
 /// Wrapper for a read to allele comparison, both cDNA and DNA are optional
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PairedMappingStats {
     /// the cDNA mapping stats
     cdna_mapping: Option<DetailedMappingStats>,
@@ -108,16 +108,20 @@ pub struct PairedMappingStats {
 }
 
 /// Wrapper for an individual mapping statistic set
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct DetailedMappingStats {
     /// length of the sequence
     query_len: usize,
+    /// length of the target
+    target_len: usize,
     /// length of the match
     match_len: usize,
     /// number of mismatches
     nm: usize,
-    /// number of unmapped bases
-    unmapped: usize,
+    /// number of unmapped bases relative to query
+    query_unmapped: usize,
+    /// number of unmapped bases relative to target
+    target_unmapped: usize,
     /// Cigar string
     cigar: String,
     /// The incorrect matching bases
@@ -132,18 +136,22 @@ impl DetailedMappingStats {
     /// * if the mapping is missing detailed alignment information
     fn from_mapping(mapping: &minimap2::Mapping) -> DetailedMappingStats {
         let query_len = mapping.query_len.unwrap().get() as usize;
+        let target_len = mapping.target_len as usize;
         let match_len = mapping.match_len as usize;
         let alignment = mapping.alignment.as_ref().unwrap();
         let nm = alignment.nm as usize;
-        let unmapped = query_len - (mapping.query_end - mapping.query_start) as usize;
+        let query_unmapped = query_len - (mapping.query_end - mapping.query_start) as usize;
+        let target_unmapped = target_len - (mapping.target_end - mapping.target_start) as usize;
         let cigar = alignment.cigar_str.as_ref().unwrap().clone();
         let md = alignment.md.as_ref().unwrap().clone();
 
         DetailedMappingStats {
             query_len,
+            target_len,
             match_len,
             nm,
-            unmapped,
+            query_unmapped,
+            target_unmapped,
             cigar,
             md
         }
