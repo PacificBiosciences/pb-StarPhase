@@ -9,3 +9,5 @@ pub mod debug;
 pub mod mapping;
 /// Wrapper for HLA match processing and comparing
 pub mod processed_match;
+/// Contains logic for re-aligning reads we find and predicting offsets for consensus
+pub mod realigner;

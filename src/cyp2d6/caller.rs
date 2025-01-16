@@ -22,7 +22,7 @@ use crate::data_types::pgx_diplotypes::{Diplotype, PgxGeneDetails, PgxMultiMappi
 use crate::util::file_io::save_fasta;
 use crate::util::homopolymers::hpc_with_guide;
 use crate::visualization::debug_bam_writer::{unmapped_record, DebugBamWriter};
-use crate::visualization::igv_session_writer::{IgvSessionWriter, CUSTOM_CONTIG};
+use crate::visualization::igv_session_writer::IgvSessionWriter;
 
 /// This is the main function to call for CYP2D6 diplotyping from a BAM file.
 /// # Arguments
@@ -630,17 +630,11 @@ pub fn diplotype_cyp2d6(
 
     if let Some(debug_folder) = cli_settings.debug_folder.as_ref() {
         // we have all the data to build a custom session file now; first, we need to build our custom reference genome
-        let contig_key = CUSTOM_CONTIG.to_string();
         match create_custom_cyp2d6_reference(
             reference_genome, database,
             &consensus_result, &hap_labels, &best_result
         ) {
             Ok(cust_ref) => {
-                let custom_sequence = &cust_ref.sequence;
-                let custom_regions = &cust_ref.regions;
-                let mut custom_reference = ReferenceGenome::empty_reference();
-                custom_reference.add_contig(contig_key, custom_sequence).unwrap();
-
                 // collect all our reads for re-mapping into the special D6 regions
                 let all_records = read_collection.into_iter()
                     .filter_map(|(k, v)| {
@@ -655,15 +649,24 @@ pub fn diplotype_cyp2d6(
 
                 // finally, put it all together
                 let session_folder = debug_folder.join("cyp2d6_igv_custom");
-                let mut session_writer = IgvSessionWriter::new(
-                    session_folder,
-                    custom_reference,
-                    custom_regions.clone(),
+                let mut session_writer = IgvSessionWriter::new(session_folder, false);
+                match session_writer.add_custom_region(
+                    cust_ref.contig_name.clone(),
+                    &cust_ref.sequence,
+                    &cust_ref.regions,
                     all_records
-                );
-                if let Err(e) = session_writer.write_session() {
-                    error!("Error while writing custom session file: {e}");
-                };
+                ) {
+                    Ok(()) => {
+                        // TODO: move this outside of here so it is shared with HLA
+                        // region added fine, write the session
+                        if let Err(e) = session_writer.write_session() {
+                            error!("Error while writing custom session file: {e}");
+                        }
+                    },
+                    Err(e) => {
+                        error!("Error while adding a CYP2D6 custom region: {e}");
+                    }
+                }
             },
             Err(e) => {
                 error!("Error while creating custom CYP2D6 reference file: {e}");

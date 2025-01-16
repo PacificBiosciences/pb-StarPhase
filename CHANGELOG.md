@@ -1,3 +1,22 @@
+# v1.1.0
+## Changes
+- HLA data configuration has been automated to support future haplotype additions
+  - The `pbstarphase build` command now requires a reference genome FASTA file for hg38; this file is specified via `--reference`
+  - `pbstarphase build` will now automatically pull the latest RefSeq file; coordinates for the MANE transcript are extracted from this resource
+  - Configurations for HLA genes have been completely updated to a new structure; if using an older database file, the existing defaults from v1.0.0 will be loaded for HLA-A and HLA-B
+- Additional HLA genes are now reported by StarPhase: HLA-C, -DPA1, -DPB1, -DQA1, -DQB1, -DRB1, -DRB3, -DRB4, and -DRB5
+- HLA algorithm has been updated to accomodate additional HLA genes
+  - Reads that only partially span an HLA locus are now supported (at least 50% overlap with a gene)
+  - Reads are now pulled from all specified HLA regions and assigned to a single gene based on closest database match
+  - Each batch of assigned reads is run through the HLA diplotyping process independently
+  - cDNA consensus step has been removed and replaced with a HPC consensus step (similar to CYP2D6); haplotype label assignment still uses cDNA sequence
+  - Additional logic has been added to support genes that are commonly absent or hemizygous (HLA-DRB3, -DRB4, and -DRB5) in individuals
+- Debug folder updates:
+  - `hla_debug.json` has been updated to include target and query unmapped base counts
+  - `read_debug.json` has been added to the outputs. This file includes the best mapping of each read to an HLA allele.
+  - `hla_igv_custom` has been added to the outputs. This is similar to the previous `cyp2d6_igv_custom`, but contains the assembled haplotypes for the HLA genes. Consensus sequence, database sequences, and user specified sequences are mapped to the custom assemblies. The IGV options on the session have been modified to reasonable defaults for comparing consensus to the reads.
+- A new version of the database file has been uploaded to support the above changes (`v1.1.0/pbstarphase_20250110.json.gz`)
+
 # v1.0.1
 ## Fixed
 - Fixed an issue where a homozygous deletion in CYP2D6 (\*5/\*5) was not considered a valid diplotype when using `--normalize-d6-only`

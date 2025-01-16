@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Wrapper for basic region coordinates
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Coordinates {
     /// Chromosome string
     chrom: String,
@@ -21,6 +21,29 @@ impl Coordinates {
         }
     }
 
+    /// Will extend the start coordinate by the given value if it comes before the current start.
+    /// Returns true if an extension happens.
+    pub fn extend_start(&mut self, alt_start: u64) -> bool {
+        if alt_start < self.start {
+            self.start = alt_start;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Will extend the end coordinate by the given value if it comes after the current end.
+    /// Returns true if an extension happens.
+    pub fn extend_end(&mut self, alt_end: u64) -> bool {
+        if alt_end > self.end {
+            self.end = alt_end;
+            true
+        } else {
+            false
+        }
+    }
+
+    // getters
     pub fn chrom(&self) -> &str {
         &self.chrom
     }
@@ -31,6 +54,14 @@ impl Coordinates {
 
     pub fn end(&self) -> u64 {
         self.end
+    }
+
+    pub fn len(&self) -> u64 {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
     }
 
     /// Wrapper for sending to htslib fetch

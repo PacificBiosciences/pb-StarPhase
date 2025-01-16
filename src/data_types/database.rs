@@ -1,6 +1,7 @@
 
 use lazy_static::lazy_static;
 use log::{debug, warn};
+use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use serde::{Deserialize, Serialize};
 use simple_error::{SimpleError, bail};
@@ -10,7 +11,8 @@ use std::collections::btree_map::Entry::{Occupied, Vacant};
 use crate::cyp2d6::definitions::Cyp2d6Config;
 use crate::data_types::alleles::AlleleDefinition;
 use crate::data_types::cpic_api_results::CpicAlleleDefinition;
-use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig};
+use crate::data_types::gene_definition::GeneCollection;
+use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig, SUPPORTED_HLA_GENES, HLA_COORDINATE_COPIES};
 
 lazy_static!{
     static ref CPIC_IGNORED_LIST: Vec<&'static str> = vec![
@@ -53,13 +55,17 @@ impl PgxDatabase {
     /// * `hla_sequences` - the hashmap from HLA identifier to the definitions (e.g., sequences)
     /// * `pharmvar_version` - the PharmVar version
     /// * `cyp2d6_gene_def` - the CYP2D6 gene definition
+    /// * `reference_genome` - the pre-loaded reference genome data
+    /// * `opt_refseq_fn` - a path to a local RefSeq file; if not specified, the latest will be downloaded
     /// # Errors
     /// * if CPIC API inconsistencies are detected
     /// * if there is an error while adding a new CPIC allele definition to our database
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         gene_to_chrom: &HashMap<String, String>, allele_definitions: &[CpicAlleleDefinition], 
         hla_version: String, hla_sequences: BTreeMap<String, HlaAlleleDefinition>,
-        pharmvar_version: String, cyp2d6_gene_def: BTreeMap<String, AlleleDefinition>
+        pharmvar_version: String, cyp2d6_gene_def: BTreeMap<String, AlleleDefinition>,
+        reference_genome: &ReferenceGenome, opt_refseq_fn: Option<&std::path::Path>
     ) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
         // initialize all the gene entries
         let mut gene_entries: BTreeMap<String, PgxGene> = Default::default();
@@ -119,7 +125,19 @@ impl PgxDatabase {
         };
 
         // generate the default configs here
-        let hla_config = HlaConfig::default();
+        // TODO: do we want to allow users to ultimately specify a file and/or URL? maybe if requested
+        let mut gene_collection = if let Some(filename) = opt_refseq_fn {
+            // this is really just for unit testing locally
+            GeneCollection::load_refseq_file(filename, Some(&SUPPORTED_HLA_GENES))?
+        } else {
+            // standard path pulls the latest refseq
+            GeneCollection::load_refseq_url(None, Some(&SUPPORTED_HLA_GENES))?
+        };
+
+        // here's where we add anything that's missing from RefSeq coordinates
+        gene_collection.copy_missing_genes(&HLA_COORDINATE_COPIES)?;
+
+        let hla_config = HlaConfig::new(gene_collection, &hla_sequences, reference_genome)?;
         let cyp2d6_config = Cyp2d6Config::default();
 
         // if we made it here, we're all good yo
@@ -440,16 +458,23 @@ mod tests {
             AlleleDefinition::new(Some(allele_name.clone()), "CYP2D6*1", vec![]).unwrap()
         );
 
+        // pre-load our small reference genome
+        let fasta_fn = PathBuf::from("./test_data/refseq_faux/hg38_chr6_masked.fa.gz");
+        let reference_genome = ReferenceGenome::from_fasta(&fasta_fn).unwrap();
+        
         // build the database
         let hla_version: String = "hla_v1".to_string();
         let pharmvar_version: String = "pharmvar_v1".to_string();
+        let refseq_fn = std::path::PathBuf::from("./test_data/refseq_faux/refseq_small.gff.gz");
         let pgx_database = PgxDatabase::new(
             &gene_to_chrom,
             &cacna1s_allele_defs,
             hla_version.clone(),
             simple_hla.clone(),
             pharmvar_version.clone(),
-            simple_cyp.clone()
+            simple_cyp.clone(),
+            &reference_genome,
+            Some(&refseq_fn)
         ).unwrap();
 
         // check that one gene inside

@@ -1,6 +1,7 @@
 
 use bio::io::fasta;
 use log::{debug, info, trace, warn};
+use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -11,7 +12,7 @@ use simple_error::bail;
 use crate::data_types::alleles::{AlleleDefinition, VariantDefinition};
 use crate::data_types::cpic_api_results::CpicAlleleDefinition;
 use crate::data_types::database::PgxDatabase;
-use crate::hla::alleles::HlaAlleleDefinition;
+use crate::hla::alleles::{HlaAlleleDefinition, SUPPORTED_HLA_GENES};
 
 // CPIC API quickstart: https://github.com/cpicpgx/cpic-data/wiki
 // CPI API full book: https://documenter.getpostman.com/view/1446428/Szt78VUJ?version=latest
@@ -35,10 +36,12 @@ const HLA_CDNA_FASTA: &str = "fasta/hla_nuc.fasta";
 // I do not think we need this though
 
 /// This is the primary call to build out our database locally via CPIC API queries.
+/// # Arguments
+/// * `reference_genome` - required now for checking the HLA alignments automatically during DB construction
 /// # Errors
 /// * if there are errors retrieving the CPIC gene list
 /// * if there are errors retrieving allele definitions for a gene
-pub fn pull_database_cpic_api() -> Result<PgxDatabase, Box<dyn std::error::Error>> {
+pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
     // first get all the CPI genes
     info!("Starting CPIC API queries...");
     let all_genes: HashMap<String, String> = get_all_genes()?;
@@ -67,7 +70,9 @@ pub fn pull_database_cpic_api() -> Result<PgxDatabase, Box<dyn std::error::Error
         latest_hla_version,
         hla_data,
         pharmvar_version,
-        cyp2d6_data
+        cyp2d6_data,
+        reference_genome,
+        None
     )?;
     Ok(full_database)
 }
@@ -248,7 +253,7 @@ fn get_hla_sequences(version: &str) -> Result<BTreeMap<String, HlaAlleleDefiniti
 /// * if the FASTA is invalid format
 /// * if the sequence cannot be converted from UTF-8
 /// * if a duplicate entry is detected in the FASTA
-fn convert_fasta_str_to_map(raw_fasta: &str, reversed_ids: bool) -> Result<HashMap<String, (String, String)>, Box<dyn std::error::Error>> {
+pub fn convert_fasta_str_to_map(raw_fasta: &str, reversed_ids: bool) -> Result<HashMap<String, (String, String)>, Box<dyn std::error::Error>> {
     let mut ret: HashMap<String, (String, String)> = Default::default();
     let reader = fasta::Reader::new(raw_fasta.as_bytes());
     for result in reader.records() {
@@ -295,7 +300,7 @@ fn convert_fasta_str_to_map(raw_fasta: &str, reversed_ids: bool) -> Result<HashM
 /// * if the key sets for each HashMap do not match
 /// * if the star alleles for an HLA ID are different in the two maps
 /// * if there is an error parsing an HLA allele definition
-fn collapse_hla_lookup(dna_data: HashMap<String, (String, String)>, cdna_data: HashMap<String, (String, String)>) 
+pub fn collapse_hla_lookup(dna_data: HashMap<String, (String, String)>, cdna_data: HashMap<String, (String, String)>) 
     -> Result<BTreeMap<String, HlaAlleleDefinition>, Box<dyn std::error::Error>> {
     // every DNA has a cDNA, but not all cDNAs have a DNA; count them before we drain the `cdna_data`
     let mut missed_dna: usize = 0;
@@ -329,13 +334,15 @@ fn collapse_hla_lookup(dna_data: HashMap<String, (String, String)>, cdna_data: H
         )?;
 
         // restrict our database to the alleles we plan to match, we can relax this if we ever do an update to HLA
-        if new_allele.gene_name() == "HLA-A" || new_allele.gene_name() == "HLA-B" {
+        // if new_allele.gene_name() == "HLA-A" || new_allele.gene_name() == "HLA-B" {
+        if SUPPORTED_HLA_GENES.contains(new_allele.gene_name()) {
             ret.insert(hla_id, new_allele);
         } else {
             ignored_alleles += 1;
         }
     }
-    debug!("Removed {ignored_alleles} alleles that are not HLA-A or HLA-B.");
+    let supported_vec: Vec<&String> = SUPPORTED_HLA_GENES.iter().collect(); // purely for print statement
+    debug!("Removed {ignored_alleles} alleles that are not in supported HLA gene set: {supported_vec:?}");
 
     Ok(ret)
 }
@@ -549,7 +556,8 @@ mod tests {
         let fixed_version = "v3.54.0-alpha";
         let hla_db = get_hla_sequences(fixed_version).unwrap();
         // assert_eq!(hla_db.len(), 38408); // this was before we restricted to just A and B
-        assert_eq!(hla_db.len(), 17585);
+        // assert_eq!(hla_db.len(), 17585); // this was with just A and B
+        assert_eq!(hla_db.len(), 36287); // v1.1.0 gene list
         
         let first_entry = hla_db.get("HLA:HLA00001").unwrap();
         assert_eq!(first_entry.hla_id(), "HLA:HLA00001");
@@ -565,7 +573,8 @@ mod tests {
         let fixed_version = "v3.57.0-alpha";
         let hla_db = get_hla_sequences(fixed_version).unwrap();
         // assert_eq!(hla_db.len(), 38408); // this was before we restricted to just A and B
-        assert_eq!(hla_db.len(), 18461);
+        // assert_eq!(hla_db.len(), 18461); // this was with just A and B
+        assert_eq!(hla_db.len(), 38316); // v1.1.0 gene list
         
         let first_entry = hla_db.get("HLA:HLA00001").unwrap();
         assert_eq!(first_entry.hla_id(), "HLA:HLA00001");

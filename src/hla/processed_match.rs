@@ -6,6 +6,7 @@ use crate::data_types::mapping::MappingStats;
 use crate::hla::mapping::HlaMappingStats;
 
 /// Container for a processing HLA mapping. Mostly helpful for wrapping the `is_better_match` function.
+#[derive(Debug)]
 pub struct HlaProcessedMatch {
     /// Name for this haplotype
     haplotype: String,
@@ -48,19 +49,19 @@ impl HlaProcessedMatch {
     
     /// Adds a mapping to this processed match; can be None to indicate missing cDNA/DNA comparators
     /// # Arguments 
-    /// * `mapping` - the minimap2 full mapping
-    /// * `seq_len` - baseline sequence length (`target`) from the alignment
-    pub fn add_mapping(&mut self, mapping: Option<minimap2::Mapping>, seq_len: usize) -> Result<(), SimpleError> {
+    /// * `mapping` - the minimap2 full mapping of an HLA database sequence (query) to the consensus (target)
+    pub fn add_mapping(&mut self, mapping: Option<minimap2::Mapping>) -> Result<(), SimpleError> {
         let (opt_processed_cigar, opt_mapping_stats, processed_range) = if let Some(m) = mapping.as_ref() {
             // first, get the processed cigar
             if m.strand != minimap2::Strand::Forward {
                 bail!("Reverse strand mappings are not supported by HlaProcessedMatch");
             }
             let cigar = m.alignment.as_ref().unwrap().cigar.as_ref().unwrap();
-            let target_offset = m.target_start as usize;
-            let target_len = m.target_len as usize;
-            let clip_start = m.query_start as usize;
-            let clip_end = seq_len - m.query_end as usize;
+            let target_offset = m.target_start as usize; // consensus offset start
+            let target_len = m.target_len as usize; // consensus length
+            let query_len = m.query_len.unwrap().get() as usize; // query length (database allele)
+            let clip_start = m.query_start as usize; // database sequence clipped bases at start
+            let clip_end = query_len - m.query_end as usize; // database sequence clipped bases at end
             let processed_cigar = process_mm_cigar(
                 cigar, 
                 target_offset, target_len,
@@ -68,17 +69,22 @@ impl HlaProcessedMatch {
             )?;
             
             // regions that overlap from this processed segment
-            let pc_start = target_offset - clip_start;
-            let pc_end = (m.target_end as usize) + clip_end;
+            let pc_start = target_offset.saturating_sub(clip_start); // clip_start can be longer than target_offset
+            let clipped_count = clip_end.min((m.target_len - m.target_end) as usize); // clipped bases is the smaller of the clippings for query or target (i.e. the overlap)
+            let pc_end = (m.target_end as usize) + clipped_count;
 
             // create the mapping also
-            let nm = m.alignment.as_ref().unwrap().nm as usize;
-            let unmapped = seq_len - (m.query_end - m.query_start) as usize;
-            let mapping_stats = MappingStats::new(seq_len, nm, unmapped);
+            let nm = m.alignment.as_ref().unwrap().nm as usize; // NM is direct copy
+            let unmapped = query_len - (m.query_end - m.query_start) as usize; // unmapped in this context is relative to the query (database allele)
+            let mapping_stats = MappingStats::new(query_len, nm, unmapped);
             
-            // make sure our last count equals the NM + unmapped; otherwise we goofed while processing
             assert_eq!(processed_cigar.len(), target_len+1); // we should have a lookup before/after each base
-            assert_eq!(*processed_cigar.last().unwrap(), nm + unmapped);
+            
+            // TODO: it turns out this is not true for really poor alignments
+            // make sure our last count equals the NM + unmapped; otherwise we goofed while processing
+            // assert_eq!(*processed_cigar.last().unwrap(), nm + unmapped);
+            
+            // return the scoring
             (Some(processed_cigar), Some(mapping_stats), pc_start..pc_end)
         } else {
             (None, None, 0..0)
@@ -93,7 +99,7 @@ impl HlaProcessedMatch {
         Ok(())
     }
 
-    /// Wrapper function for determining if this match is better than the other
+    /// Wrapper function for determining if this match (self) is better than the other match (rhs)
     pub fn is_better_match(&self, rhs: &Self) -> Result<bool, SimpleError> {
         // sanity check
         if self.processed_cigars.len() != rhs.processed_cigars.len() {
@@ -186,14 +192,26 @@ impl HlaProcessedMatch {
 /// Nice little shortcut for making sure we are comparing equivalent regions.
 /// The value at index "i" is the number of edits before position "i" in the string.
 /// Thus, the first value in this vec is always 0, and the last should equal NM + unmapped.
+/// # Arguments
+/// * `cigar` - the cigar Vec for the minimap2 alignment
+/// * `target_offset` - the offset into the target (consensus) that alignment starts
+/// * `target_len` - the total length of the target (consensus)
+/// * `clip_start` - the number of bases clipped from the start of the query (database sequence)
+/// * `clip_end` - the number of bases clipped from the end of the query (database sequence)
 fn process_mm_cigar(cigar: &[(u32, u8)], target_offset: usize, target_len: usize, clip_start: usize, clip_end: usize) -> Result<Vec<usize>, SimpleError> {
     // alignment starts target_offset into the vec, so everything before is a 0
-    assert!(clip_start <= target_offset);
-    let mut ret = vec![0; target_offset - clip_start + 1]; // there should always be at least 1 zero at the start
+    // assert!(clip_start <= target_offset); // this is not true when we have really bad alignments
+    
+    // if clipped is less than offset, it just means the query is shorter than target; thus pad with 0s
+    let zero_padding = target_offset.saturating_sub(clip_start);
+    
+    // anything that is not 0-padded, should count as NM up to the target_offset
+    let nm_padding = target_offset - zero_padding;
+    let mut ret = vec![0; zero_padding + 1]; // there should always be at least 1 zero at the start
     let mut current_nm = 0;
 
     // if we have soft clipping at the start, add a region that is basically a bunch of mismatches
-    for _i in 0..clip_start {
+    for _i in 0..nm_padding {
         current_nm += 1;
         ret.push(current_nm);
     }
@@ -217,15 +235,21 @@ fn process_mm_cigar(cigar: &[(u32, u8)], target_offset: usize, target_len: usize
         };
     }
 
-    // if we have soft clipping at the end, add a region that is basically a bunch of mismatches
-    for _i in 0..clip_end {
+    // everything after this is either clipped or padding
+    // we expect 1 more entry than the target_len
+    let missing_values = target_len + 1 - ret.len();
+
+    // number of NM extensions is the smaller of the clipped bases from the query OR the missing alignments to target
+    let nm_extension = clip_end.min(missing_values);
+    for _i in 0..nm_extension {
         current_nm += 1;
         ret.push(current_nm);
     }
 
-    // extend to fill out whatever remains, with 1 extra so we have lookups after each position
+    // the "zero" padding is everything else; extend to fill out whatever remains
     assert!(ret.len() <= target_len+1);
-    ret.extend(std::iter::repeat(current_nm).take(target_len+1  - ret.len()));
+    let zero_padding = missing_values - nm_extension;
+    ret.extend(std::iter::repeat(current_nm).take(zero_padding));
     Ok(ret)
 }
 
@@ -264,6 +288,32 @@ mod tests {
         let target_len = 18;
         let clip_start = 2;
         let clip_end = 3;
+        let result = process_mm_cigar(&cigar, target_offset, target_len, clip_start, clip_end).unwrap();
+        assert_eq!(expected_pc, result);
+    }
+
+    #[test]
+    fn test_large_unmapped() {
+        // (length, type)
+        let cigar = [
+            (2, 7), // match
+        ];
+
+        // large preceding overhang
+        let expected_pc = vec![0, 1, 2, 2, 2];
+        let target_offset = 2;
+        let target_len = 4;
+        let clip_start = 100;
+        let clip_end = 0;
+        let result = process_mm_cigar(&cigar, target_offset, target_len, clip_start, clip_end).unwrap();
+        assert_eq!(expected_pc, result);
+        
+        // large following overhang
+        let expected_pc = vec![0, 0, 0, 1, 2];
+        let target_offset = 0;
+        let target_len = 4;
+        let clip_start = 0;
+        let clip_end = 100;
         let result = process_mm_cigar(&cigar, target_offset, target_len, clip_start, clip_end).unwrap();
         assert_eq!(expected_pc, result);
     }

@@ -98,6 +98,19 @@ pub struct DiplotypeSettings {
     #[clap(help_heading = Some("HLA calling"))]
     pub min_cdf: f64,
 
+    /// Expected minor allele frequency; reduce to account for skew from sequencing bias
+    #[clap(long = "expected-maf")]
+    #[clap(value_name = "FLOAT")]
+    #[clap(default_value = "0.45")]
+    #[clap(help_heading = Some("HLA calling"))]
+    pub expected_maf: f64,
+
+    /// Reverts to the old HLA calling algorithm for just HLA-A and HLA-B
+    #[clap(hide = true)]
+    #[clap(long = "hla-revert-method")]
+    #[clap(help_heading = Some("HLA calling"))]
+    pub hla_revert_method: bool,
+
     /// Additional HLA targets for the debug BAM file
     #[clap(hide = true)]
     #[clap(long = "debug-hla-target")]
@@ -246,8 +259,17 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
         }
         info!("\tMinimum CDF probability: {}", settings.min_cdf);
 
+        if !(0.01..=0.5).contains(&settings.expected_maf) {
+            bail!("--expected-maf must be between 0.01 and 0.5");
+        }
+        info!("\tExpected MAF: [{}, 0.5]", settings.expected_maf);
+
         if settings.debug_folder.is_some() {
             debug!("\tHLA debug targets: {:?}", settings.debug_hla_targets);
+        }
+
+        if settings.hla_revert_method {
+            debug!("\tHLA revert method: {}", settings.hla_revert_method);
         }
 
         if settings.cyp2d6_bam_filename.is_some() {
