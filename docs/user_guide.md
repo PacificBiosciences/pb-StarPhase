@@ -300,6 +300,7 @@ The outputs contained in this folder are subject to change as the algorithms evo
 Here is a brief list of some of the current debug outputs:
 
 * `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
+* `cyp2d6_alleles.json` - Contains details on variants that were identified for each _CYP2D6_ allele. This includes (1) "deep" haplotype labels indicating allelic differences such as `(2_CYP2D6*4.001 +rs28735595)` and (2) a list of variants that were identified or are missing relative to the assigned haplotype. See [debug outputs](./debug_outputs.md#cyp2d6-alleles) for more details.
 * `cyp2d6_igv_custom` - Folder containing an IGV session and supporting data files for viewing the full-length reads aligned to the two CYP2D6 haplotypes for this dataset. Allows for manual detection of missed variants and inspection of direct evidence of copy-number in the reads. An example loaded session file should look similar to [example_session.png](../images/example_session.png). Exact formatting may vary depending on IGV version and user settings.
   * `custom_igv_session.xml` - Contains the IGV session information that loads the following files. This is what most users should access first.
   * `custom_alignments.bam` - Contains the full-length reads from the input BAM file re-aligned to the custom reference file.

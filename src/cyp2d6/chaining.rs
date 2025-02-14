@@ -7,6 +7,7 @@ use waffle_con::multi_consensus::MultiConsensus;
 use crate::cyp2d6::caller::convert_chain_to_hap;
 use crate::cyp2d6::definitions::Cyp2d6Config;
 use crate::cyp2d6::errors::{CallerError, CallerWarning};
+use crate::cyp2d6::region::{Cyp2d6DetailLevel, Cyp2d6Region};
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
 use crate::data_types::mapping::MappingStats;
 use crate::util::mapping::standard_hifi_aligner;
@@ -23,8 +24,8 @@ pub type SequenceWeights = Vec<(usize, f64)>;
 /// # Arguments
 /// * `sequence` - the sequence to compare to the consensuses, we expect this to be fully represented
 /// * `consensus` - the multi-consensus containing all allowed consensuses
-/// * `con_labels` - human readable labels for the consensuses (e.g. star-alleles)
-pub fn weight_sequence(sequence: &str, consensus: &MultiConsensus, con_labels: &[Cyp2d6RegionLabel]) -> Result<SequenceWeights, Box<dyn std::error::Error>> {
+/// * `con_regions` - regions which have labels attached to them
+pub fn weight_sequence(sequence: &str, consensus: &MultiConsensus, con_regions: &[Cyp2d6Region]) -> Result<SequenceWeights, Box<dyn std::error::Error>> {
     let dna_aligner = standard_hifi_aligner()
         .with_seq(sequence.as_bytes())?;
     let seq_len = sequence.len();
@@ -37,15 +38,16 @@ pub fn weight_sequence(sequence: &str, consensus: &MultiConsensus, con_labels: &
     let extra_flags = None;
     
     // default is the length of the sequence getting "deleted" with 0 overlap
-    let mut ret = vec![(seq_len, 0.0); con_labels.len()];
+    let mut ret = vec![(seq_len, 0.0); con_regions.len()];
 
     // track the minimum observed NM-only ED; if it's larger than the maximum then this read does not map well to anything
     let penalize_unmapped = true; // we are mapping consensuses against a sequence from a read, penalize if it cannot fill out that sequence space
     let maximum_allowed_ed: f64 = 0.05; // TODO: I have a feeling we _should_ lower this, maybe down to 2-3%?
     let mut min_ed_frac: f64 = 1.0;
     
-    for (con_index, (con, label)) in consensus.consensuses().iter().zip(con_labels.iter()).enumerate() {
+    for (con_index, (con, region)) in consensus.consensuses().iter().zip(con_regions.iter()).enumerate() {
         let con_seq = con.sequence();
+        let label = region.label();
 
         if !label.is_allowed_label() {
             // we ignore all Unknown and FalseAlleles
@@ -203,7 +205,7 @@ impl ChainScore {
 pub fn find_best_chain_pair(
     cyp2d6_config: &Cyp2d6Config,
     obs_chains: &BTreeMap<String, Vec<Vec<usize>>>, chain_scores: &BTreeMap<String, Vec<SequenceWeights>>,
-    hap_labels: &[Cyp2d6RegionLabel],
+    hap_regions: &[Cyp2d6Region],
     infer_connections: bool, normalize_all_alleles: bool,
     penalties: ChainPenalties,
     ignore_chain_label_limits: bool
@@ -214,8 +216,14 @@ pub fn find_best_chain_pair(
         bail!("Lasso penalty must be >= 0.0");
     }
 
+    // we need just the labels quite a bit, so lets extract them to make our refactor easier
+    // this could turn into tech debt later if we need more info in this process
+    let hap_labels: Vec<Cyp2d6RegionLabel> = hap_regions.iter()
+        .map(|r| r.label().clone())
+        .collect();
+
     // first, identify all connections
-    let num_haps = hap_labels.len();
+    let num_haps = hap_regions.len();
     let mut downstream_possible: Vec<Vec<bool>> =  vec![vec![false; num_haps]; num_haps]; // 2D [upstream][downstream] -> edge present
     for (_qname, putative_chains) in obs_chains.iter() {
         for chain in putative_chains.iter() {
@@ -261,9 +269,9 @@ pub fn find_best_chain_pair(
                 // simpler check, if the pairing is allowed, then we will infer it in the absence of any outbound edges
                 if (downstream_no_link || upstream_no_link) && // make sure at least one end of this has no observed connections
                     !downstream_possible[i][j] && // probably redundant check
-                    hap_labels[i].is_allowed_label() && 
-                    hap_labels[j].is_allowed_label() && 
-                    hap_labels[i].is_allowed_label_pair(&hap_labels[j]) {
+                    h1.is_allowed_label() && 
+                    h2.is_allowed_label() && 
+                    h1.is_allowed_label_pair(h2) {
                     // the labels are allowed to be a pair, so we will infer it as possible
                     let h2_mod = h2.simplify_allele(detailed_inference, cyp_translate);
                     debug!("\t{i}_{h1} ({h1_mod}) => {j}_{h2} ({h2_mod}) = inferred");
@@ -306,13 +314,13 @@ pub fn find_best_chain_pair(
         // if ignore_chain_label_limits || last_label.starts_with("CYP2D") {
         // TODO: can we add restrictions back in at some point?
 
-        let (is_allowed_inferrence, is_allowed_candidate) = check_chain_inferrences(cyp2d6_config, &current_chain, hap_labels, &inferred_possible);
+        let (is_allowed_inferrence, is_allowed_candidate) = check_chain_inferrences(cyp2d6_config, &current_chain, &hap_labels, &inferred_possible);
         if !is_allowed_inferrence {
             // there is an inferrence happening that is not allowed, discard this candidate entirely
             continue;
         }
         
-        let simplified_chain = convert_chain_to_hap(&current_chain, hap_labels, true, cyp_translate);
+        let simplified_chain = convert_chain_to_hap(&current_chain, hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
         if ignore_chain_label_limits || (!simplified_chain.is_empty() && is_allowed_candidate) {
             // only add a chain if we are ignore labels OR 
             //     (if the chain produces a non-empty haplotype AND
@@ -496,7 +504,7 @@ pub fn find_best_chain_pair(
             
             // check if we have any unexpected chain pairs at the CYP2D level
             let expectation_mismatch = if ignore_chain_label_limits { 0 } 
-                else { unexpected_count(&possible_chains[i], hap_labels, cyp2d6_config) + unexpected_count(&possible_chains[j], hap_labels, cyp2d6_config) };
+                else { unexpected_count(&possible_chains[i], &hap_labels, cyp2d6_config) + unexpected_count(&possible_chains[j], &hap_labels, cyp2d6_config) };
             let unexpected_chain_penalty = (expectation_mismatch as f64) * penalties.unexpected_chain_penalty;
 
             // count up the number of edges that are from inferrence
@@ -799,9 +807,9 @@ mod tests {
     /// User provides a list of haplotypes and the observed chains, then scores are auto-generated to match.
     /// This only generates constant values where the "match" is a perfect match and all others have a constant ED.
     /// # Arguments
-    /// * `hap_labels` - the labels for the haplotypes
+    /// * `num_labels` - total number of haplotypes
     /// * `chains` - all observed chains, these can just be expected diplotypes for ease of use
-    fn create_pairwise_chains(hap_labels: &[Cyp2d6RegionLabel], chains: &[Vec<usize>]) -> (BTreeMap<String, Vec<Vec<usize>>>, BTreeMap<String, Vec<SequenceWeights>>) {
+    fn create_pairwise_chains(num_labels: usize, chains: &[Vec<usize>]) -> (BTreeMap<String, Vec<Vec<usize>>>, BTreeMap<String, Vec<SequenceWeights>>) {
         // contains the best observed chains for each
         let mut obs_chains: BTreeMap<String, Vec<Vec<usize>>> = Default::default();
         // contains scores against all alleles
@@ -819,7 +827,7 @@ mod tests {
                 let mut weights = vec![];
                 for &hap_index in chain.iter() {
                     // set all scores to "bad"; 100 ED and fully overlapping
-                    let mut all_scores = vec![(100, 1.0); hap_labels.len()];
+                    let mut all_scores = vec![(100, 1.0); num_labels];
                     // set the one match to "good"; 0 ED
                     all_scores[hap_index] = (0, 1.0);
                     weights.push(all_scores);
@@ -840,6 +848,7 @@ mod tests {
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("C".to_string())),
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("D".to_string()))
         ];
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
         let obs_chains = [
             // 0 -> 1 -> 2
             ("seq_1".to_string(), vec![vec![0, 2]]),
@@ -857,7 +866,7 @@ mod tests {
         ].into_iter().collect();
         let penalties = Default::default();
         let cyp2d6_config = Cyp2d6Config::default();
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, false, true, penalties, true).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, false, true, penalties, true).unwrap();
         assert_eq!(chain_result, vec![
             vec![0, 2],
             vec![1, 1]
@@ -871,6 +880,7 @@ mod tests {
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("A".to_string())),
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("B".to_string()))
         ];
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
         let obs_chains = [
             // B -> A -> A
             ("seq_0".to_string(), vec![vec![1]]),
@@ -914,7 +924,7 @@ mod tests {
         // no lasso penalty
         let penalties = ChainPenalties::new(0.0, -(0.01_f64.ln()), 0.0, 2.0);
         let cyp2d6_config = Cyp2d6Config::default();
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, false, true, penalties, true).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, false, true, penalties, true).unwrap();
         assert_eq!(chain_result, vec![
             vec![1],
             vec![1, 0, 0, 0] // without lasso, it will just greedily add these
@@ -923,7 +933,7 @@ mod tests {
 
         // now test with lasso penalty, it should drop the first 0
         let penalties = ChainPenalties::new(3.0, -(0.01_f64.ln()), 0.0, 2.0);
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, false, true, penalties, true).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, false, true, penalties, true).unwrap();
         assert_eq!(chain_result, vec![
             vec![1],
             vec![1, 0, 0] // with lasso, it restrict to what is observed
@@ -943,22 +953,22 @@ mod tests {
             ],
             vec![0] // these don't matter for the test
         );
-        let con_labels = vec![
-            Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("A".to_string())),
-            Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("C".to_string())),
-            Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("G".to_string())),
+        let con_regions = vec![
+            Cyp2d6Region::new(Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("A".to_string())), None),
+            Cyp2d6Region::new(Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("C".to_string())), None),
+            Cyp2d6Region::new(Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("G".to_string())), None),
         ];
 
         // test mostly match, but best is the first entry
         let sequence = "AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGAACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC";
-        let score = weight_sequence(&sequence, &consensus, &con_labels).unwrap();
+        let score = weight_sequence(&sequence, &consensus, &con_regions).unwrap();
         assert_eq!(score.iter().min_by(|a, b| {
             a.partial_cmp(b).unwrap()
         }).unwrap(), &score[0]);
 
         // test equal match (G -> T) to each
         let sequence = "AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGNACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC";
-        let score = weight_sequence(&sequence, &consensus, &con_labels).unwrap();
+        let score = weight_sequence(&sequence, &consensus, &con_regions).unwrap();
         assert_eq!(score[0], score[1]);
         assert_eq!(score[0], score[2]);
     }
@@ -976,6 +986,7 @@ mod tests {
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("4".to_string())),
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Hybrid, Some("CYP2D6::CYP2D7::exon2".to_string()))
         ];
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
         let chains = [
             // two components for *3 -> link_region; <BREAK> Rep7 -> D7
             vec![0, 1],
@@ -987,13 +998,13 @@ mod tests {
         ];
 
         // create pairwise chains from the above
-        let (obs_chains, chain_scores) = create_pairwise_chains(&hap_labels, &chains);
+        let (obs_chains, chain_scores) = create_pairwise_chains(hap_regions.len(), &chains);
 
         // first, test with no inferrence, which should just find *3 / *4
         let infer = false;
         let penalties: ChainPenalties = Default::default();
         let cyp2d6_config = Cyp2d6Config::default();
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, infer, true, penalties.clone(), false).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, infer, true, penalties.clone(), false).unwrap();
         assert_eq!(chain_result, vec![
             vec![0, 1], // *3
             vec![5, 1] // *4
@@ -1010,7 +1021,7 @@ mod tests {
         // first, test with no inferrence, which should just find *3 / *4
         let cyp2d6_config = Cyp2d6Config::default();
         let infer = true;
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, infer, true, penalties, false).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, infer, true, penalties, false).unwrap();
         assert_eq!(chain_result, vec![
             vec![0, 1, 2, 3, 4], // *3 + D7
             vec![5, 1, 2, 3, 6] // *4 + *68, this should get inferred as the correct solution here
@@ -1034,7 +1045,9 @@ mod tests {
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Spacer, None),
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Unknown, None)
         ];
-        let result = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, infer, true, penalties, false);
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
+        
+        let result = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, infer, true, penalties, false);
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().downcast::<CallerError>().unwrap().as_ref(), &CallerError::NoChainingHead);
 
@@ -1062,13 +1075,15 @@ mod tests {
         let hap_labels = vec![
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6Deletion, None)
         ];
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
+        
         let infer_connections = true; // targeted mode has inference on, but does not matter here
         let normalize_all_alleles = false; // works with true, error popped up with false
         let penalties = Default::default();
         let ignore_chain_label_limits = false;
 
         // we expect Ok(0/0) indicated *5/*5 homozygote; we were getting Err though
-        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_labels, infer_connections, normalize_all_alleles, penalties, ignore_chain_label_limits).unwrap();
+        let (chain_result, danglers) = find_best_chain_pair(&cyp2d6_config, &obs_chains, &chain_scores, &hap_regions, infer_connections, normalize_all_alleles, penalties, ignore_chain_label_limits).unwrap();
         assert_eq!(chain_result, vec![vec![0], vec![0]]);
         assert!(danglers.is_empty());
     }

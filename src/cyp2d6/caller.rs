@@ -14,7 +14,9 @@ use waffle_con::priority_consensus::{PriorityConsensus, PriorityConsensusDWFA};
 
 use crate::cli::diplotype::DiplotypeSettings;
 use crate::cyp2d6::chaining::{find_best_chain_pair, weight_sequence, ChainPenalties, SequenceWeights};
+use crate::cyp2d6::debug::DeeplotypeDebug;
 use crate::cyp2d6::haplotyper::{AlleleMapping, Cyp2d6Extractor};
+use crate::cyp2d6::region::{Cyp2d6DetailLevel, Cyp2d6Region};
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
 use crate::cyp2d6::visualization::create_custom_cyp2d6_reference;
 use crate::data_types::database::PgxDatabase;
@@ -327,7 +329,7 @@ pub fn diplotype_cyp2d6(
     assert_eq!(raw_sequences.len(), consensus_result.sequence_indices().len());
 
     // figure out what each consensus haplotype is
-    let mut hap_labels = vec![];
+    let mut hap_regions = vec![];
     let mut sequences_labeled: HashSet<String> = Default::default();
     for (i, c) in consensus_result.consensuses().iter().enumerate() {
         let matches = consensus_result.sequence_indices().iter()
@@ -341,32 +343,33 @@ pub fn diplotype_cyp2d6(
 
         // we are *expecting* full length sequences in our consensus
         let force_assignment = true; // at this point, we need a label even if there is some ambiguity
-        let hap_label = match d6_typer.find_full_type_in_sequence(sequence_to_type, max_missing_typing_frac, force_assignment) {
+        let mut hap_region = match d6_typer.find_full_type_in_sequence(sequence_to_type, max_missing_typing_frac, force_assignment) {
             Ok(hl) => hl,
             Err(e) => {
                 let unknown = Cyp2d6RegionLabel::new_unknown();
                 error!("Error while typing consensus #{i}, setting to {unknown}.");
                 error!("Typing error: {e}");
-                unknown
+                Cyp2d6Region::new(unknown, None)
             }
         };
 
         // do a check to make sure we do not already have this sequence
-        let hap_label = if sequences_labeled.contains(sequence_to_type) {
+        if sequences_labeled.contains(sequence_to_type) {
             // we somehow created two identical alleles and split them into two groups
             // label this second one as a FalseAllele so we ignore it later
             debug!("Detected duplicate allele in consensus {i}, marking as FalseAllele");
-            Cyp2d6RegionLabel::new(
-                Cyp2d6RegionType::FalseAllele,
-                Some(hap_label.full_allele())
-            )
+            hap_region.mark_false_allele();
         } else {
             // new sequence, no changes needed
             sequences_labeled.insert(sequence_to_type.to_string());
-            hap_label
         };
 
-        hap_labels.push(hap_label);
+        // set the region unique ID right before we push it into the list
+        hap_region.set_unique_id(hap_regions.len());
+
+        debug!("hap_label = \"{}\"", hap_region);
+        debug!("deep_label = {:?}", hap_region.deep_label());
+        hap_regions.push(hap_region);
     }
 
     // make the output BAM if requested
@@ -378,7 +381,7 @@ pub fn diplotype_cyp2d6(
             let qname = format!("seq_{seq_id}");
             let sequence = raw_seq.to_string(); // rev-comp not necessary because these are sourced from BAM records
             let tags = [
-                ("HP".to_string(), format!("{phase_id}_{}", hap_labels[phase_id]))
+                ("HP".to_string(), hap_regions[phase_id].index_label())
             ].into_iter().collect();
 
             // add the record
@@ -404,7 +407,7 @@ pub fn diplotype_cyp2d6(
     // build up all the chains
     let mut qname_chains: BTreeMap<String, Vec<Vec<usize>>> = Default::default();
     let mut unique_chains: HashSet<Vec<usize>> = Default::default();
-    let mut best_allele_mapping_counts: Vec<u64> = vec![0; hap_labels.len()];
+    let mut best_allele_mapping_counts: Vec<u64> = vec![0; hap_regions.len()];
     let mut qname_chain_scores: BTreeMap<String, Vec<SequenceWeights>> = Default::default();
     let mut multi_mapping_details = vec![];
     for (read_id, regions) in regions_of_interest.iter() {
@@ -422,7 +425,7 @@ pub fn diplotype_cyp2d6(
             let seq = std::str::from_utf8(&read_sequence[region.region().clone()])?;
             
             // score this sequence against each consensus
-            let weighted_scores = weight_sequence(seq, &consensus_result, &hap_labels)?;
+            let weighted_scores = weight_sequence(seq, &consensus_result, &hap_regions)?;
             if weighted_scores.is_empty() {
                 // all mappings were bad, we should skip this one
                 // this should only happen at the edges, print a warning if it doesn't
@@ -536,7 +539,7 @@ pub fn diplotype_cyp2d6(
                     qname.clone(),
                     region.region().clone(),
                     consensus_index,
-                    hap_labels[consensus_index].full_allele()
+                    hap_regions[consensus_index].index_label()
                 ));
             }
         }
@@ -545,30 +548,29 @@ pub fn diplotype_cyp2d6(
     // debug for unique counts
     debug!("Uniquely assigned table:");
     for (con_index, &unique_count) in best_allele_mapping_counts.iter().enumerate() {
+        let label = hap_regions[con_index].label();
+
         // if there are no unique reads; THEN we mark this as a FalseAllele
         if unique_count == 0 &&
-            hap_labels[con_index].region_type() != Cyp2d6RegionType::Unknown &&
-            hap_labels[con_index].region_type() != Cyp2d6RegionType::FalseAllele {
+            label.region_type() != Cyp2d6RegionType::Unknown &&
+            label.region_type() != Cyp2d6RegionType::FalseAllele {
             // this is a false allele, nothing is uniquely mapping to it; retain the original label as the subtype
-            hap_labels[con_index] = Cyp2d6RegionLabel::new(
-                Cyp2d6RegionType::FalseAllele,
-                Some(hap_labels[con_index].full_allele())
-            ); 
+            hap_regions[con_index].mark_false_allele();
         }
-        debug!("\t{con_index}_{} => {unique_count}", hap_labels[con_index]);
+        debug!("\t{} => {unique_count}", hap_regions[con_index].index_label());
     }
 
     // debug output for the table
     debug!("Allele count table:");
     for (&con_index, count) in single_frequency.iter() {
-        debug!("\t{con_index}_{} => {count}", hap_labels[con_index]);
+        debug!("\t{con_index}_{} => {count}", hap_regions[con_index]);
     }
 
     // print the uniquely assigned chains as well
     debug!("Unique chains:");
     for chain in unique_chains.iter().sorted() {
         let string_form: Vec<String> = chain.iter()
-            .map(|&c_index| format!("{c_index}_{}", hap_labels[c_index]))
+            .map(|&c_index| format!("{c_index}_{}", hap_regions[c_index]))
             .collect();
         debug!("\t{string_form:?}");
     }
@@ -577,7 +579,7 @@ pub fn diplotype_cyp2d6(
     debug!("Chain count table:");
     for (chain, count) in chain_frequency.iter() {
         let string_form: Vec<String> = chain.iter()
-            .map(|&c_index| format!("{c_index}_{}", hap_labels[c_index]))
+            .map(|&c_index| hap_regions[c_index].index_label())
             .collect();
         debug!("\t{string_form:?} => {count}")
     }
@@ -586,7 +588,7 @@ pub fn diplotype_cyp2d6(
         // make the output link graph if we have a debug folder
         let out_graph_fn = debug_folder.join("cyp2d6_link_graph.svg");
         debug!("Generating CYP2D6 graph at {out_graph_fn:?}");
-        if let Err(e) = crate::cyp2d6::visualization::generate_debug_graph(&hap_labels, &chain_frequency, &out_graph_fn) {
+        if let Err(e) = crate::cyp2d6::visualization::generate_debug_graph(&hap_regions, &chain_frequency, &out_graph_fn) {
             error!("Error while generating CYP2D6 debug graph: {e}");
         }
 
@@ -594,8 +596,8 @@ pub fn diplotype_cyp2d6(
         let consensus_fn = debug_folder.join("consensus_CYP2D6.fa");
         debug!("Saving consensus for CYP2D6 to {consensus_fn:?}");
         let mut consensus_map: BTreeMap<String, String> = Default::default();
-        for (index, (label, consensus)) in hap_labels.iter().zip(consensus_result.consensuses().iter()).enumerate() {
-            let k = format!("{index}_{label}");
+        for (region, consensus) in hap_regions.iter().zip(consensus_result.consensuses().iter()) {
+            let k = region.index_label();
             let v = std::str::from_utf8(consensus.sequence())?.to_string();
             consensus_map.insert(k, v);
         }
@@ -609,7 +611,7 @@ pub fn diplotype_cyp2d6(
     let ignore_chain_label_limits = false; // this should always be false in prod; true is just for testing
     let (best_result, chain_warnings) = find_best_chain_pair(
         database.cyp2d6_config(),
-        &qname_chains, &qname_chain_scores, &hap_labels, 
+        &qname_chains, &qname_chain_scores, &hap_regions,
         infer_connections, normalize_all_alleles, penalties, ignore_chain_label_limits
     )?;
     if !chain_warnings.is_empty() {
@@ -623,16 +625,19 @@ pub fn diplotype_cyp2d6(
     debug!("Best_results:");
     for chain in best_result.iter() {
         let string_form = chain.iter()
-            .map(|&c_index| format!("{c_index}_{}", hap_labels[c_index]))
+            .map(|&c_index| hap_regions[c_index].index_label())
             .join(" -> ");
         debug!("\t{string_form}");
     }
+
+    // used in the return generation, but possible in the debug folder construction also
+    let cyp_translate = d6_typer.cyp2d6_config().cyp_translate();
 
     if let Some(debug_folder) = cli_settings.debug_folder.as_ref() {
         // we have all the data to build a custom session file now; first, we need to build our custom reference genome
         match create_custom_cyp2d6_reference(
             reference_genome, database,
-            &consensus_result, &hap_labels, &best_result
+            &consensus_result, &hap_regions, &best_result
         ) {
             Ok(cust_ref) => {
                 // collect all our reads for re-mapping into the special D6 regions
@@ -672,17 +677,28 @@ pub fn diplotype_cyp2d6(
                 error!("Error while creating custom CYP2D6 reference file: {e}");
             }
         }
+
+        // also create a CYP2D6 deep haplotype output JSON
+        let allele_fn = debug_folder.join("cyp2d6_alleles.json");
+        debug!("Saving CYP2D6 alleles to {:?}", allele_fn);
+        let allele_stats = DeeplotypeDebug::new(&best_result, &hap_regions, cyp_translate);
+        crate::util::file_io::save_json(&allele_stats, &allele_fn)?;
     }
 
     // finally lets build our results
-    let cyp_translate = d6_typer.cyp2d6_config().cyp_translate();
-    let hap1 = convert_chain_to_hap(&best_result[0], &hap_labels, true, cyp_translate);
-    let hap2 = convert_chain_to_hap(&best_result[1], &hap_labels, true, cyp_translate);
+    let hap1 = convert_chain_to_hap(&best_result[0], &hap_regions, Cyp2d6DetailLevel::DeepAlleles, cyp_translate);
+    let hap2 = convert_chain_to_hap(&best_result[1], &hap_regions, Cyp2d6DetailLevel::DeepAlleles, cyp_translate);
+    let deeplotype = Diplotype::new(&hap1, &hap2);
+    debug!("Full deeplotype for CYP2D6 => \"{}\"", deeplotype.diplotype());
+
+    // finally lets build our results
+    let hap1 = convert_chain_to_hap(&best_result[0], &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
+    let hap2 = convert_chain_to_hap(&best_result[1], &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
     let diplotypes = vec![Diplotype::new(&hap1, &hap2)];
     debug!("Full diplotype for CYP2D6 => \"{}\"", diplotypes[0].diplotype());
 
-    let hap1_collapsed = convert_chain_to_hap(&best_result[0], &hap_labels, false, cyp_translate);
-    let hap2_collapsed = convert_chain_to_hap(&best_result[1], &hap_labels, false, cyp_translate);
+    let hap1_collapsed = convert_chain_to_hap(&best_result[0], &hap_regions, Cyp2d6DetailLevel::CoreAlleles, cyp_translate);
+    let hap2_collapsed = convert_chain_to_hap(&best_result[1], &hap_regions, Cyp2d6DetailLevel::CoreAlleles, cyp_translate);
     let diplotypes_collapsed = vec![Diplotype::new(&hap1_collapsed, &hap2_collapsed)];
     debug!("Simple diplotype for CYP2D6 => \"{}\"", diplotypes_collapsed[0].diplotype());
 
@@ -723,15 +739,16 @@ fn merge_consensus_results(
         
         // we are *expecting* full length sequences in our consensus
         let force_assignment = false; // if we have label ambiguity, then the allele is incomplete and we want it to get merged if possible
-        let allele_label = match d6_typer.find_full_type_in_sequence(sequence_to_type, max_missing_consensus_frac, force_assignment) {
+        let allele = match d6_typer.find_full_type_in_sequence(sequence_to_type, max_missing_consensus_frac, force_assignment) {
             Ok(al) => al,
             Err(e) => {
                 let unknown = Cyp2d6RegionLabel::new_unknown();
                 error!("Error while typing consensus #{i}, setting to {unknown}.");
                 error!("Typing error: {e}");
-                unknown
+                Cyp2d6Region::new(unknown, None)
             }
         };
+        let allele_label = allele.label();
 
         // reduce the label for merging
         let detailed = true; // true means we keep sub-alleles such as "*4.001"
@@ -855,10 +872,10 @@ fn merge_consensus_results(
 /// E.g. [0, 0, 1] will become "*4x2 + *10"
 /// # Arguments
 /// * `chain` - the chains of alleles to tie together
-/// * `hap_labels` - the haplotype labels for the internals, these can get converted to alleles where appropriate
-/// * `detailed` - if False, then this will reduce any D6 subunits into their integer form; e.g., *4.001 -> *4
+/// * `hap_regions` - the haplotype labels for the internals, these can get converted to alleles where appropriate
+/// * `detail_level` - sets the corresponding level of detail on the reported alleles
 /// * `cyp_translate` - a map from internal CYP name to user friendly name
-pub fn convert_chain_to_hap(chain: &[usize], hap_labels: &[Cyp2d6RegionLabel], detailed: bool, cyp_translate: &BTreeMap<String, String>) -> String {
+pub fn convert_chain_to_hap(chain: &[usize], hap_regions: &[Cyp2d6Region], detail_level: Cyp2d6DetailLevel, cyp_translate: &BTreeMap<String, String>) -> String {
     // track the number of non-deletion alleles we identify
     // this is robust to a potential *5x2 situation (which may also have reporting issue, but that's a future problem)
     let mut num_non_deletion = 0;
@@ -868,8 +885,9 @@ pub fn convert_chain_to_hap(chain: &[usize], hap_labels: &[Cyp2d6RegionLabel], d
         .rev()
         .filter(|&&c_index| {
             // only keep CYP2D alleles that are not CYP2D7
-            let keep_allele = hap_labels[c_index].is_cyp2d() && hap_labels[c_index].region_type() != Cyp2d6RegionType::Cyp2d7;
-            if keep_allele && hap_labels[c_index].region_type() != Cyp2d6RegionType::Cyp2d6Deletion {
+            let hap_label = hap_regions[c_index].label();
+            let keep_allele = hap_label.is_cyp2d() && hap_label.region_type() != Cyp2d6RegionType::Cyp2d7;
+            if keep_allele && hap_label.region_type() != Cyp2d6RegionType::Cyp2d6Deletion {
                 num_non_deletion += 1;
             }
             keep_allele
@@ -880,13 +898,18 @@ pub fn convert_chain_to_hap(chain: &[usize], hap_labels: &[Cyp2d6RegionLabel], d
     // secondary filtering and translation into a string
     reportable_indices.iter()
         .filter_map(|&c_index| {
-            if hap_labels[c_index].region_type() == Cyp2d6RegionType::Cyp2d6Deletion && num_non_deletion > 0 {
+            let hap_label = hap_regions[c_index].label();
+            if hap_label.region_type() == Cyp2d6RegionType::Cyp2d6Deletion && num_non_deletion > 0 {
                 // this will filter out *5 (deletion) alleles if something else is on the same chain; i.e. *5+*10 is not an allowed report (although it may happen biologically)
                 None
             } else {
                 // passed all above secondary filtering
                 // convert the allele index into a human readable string
-                let string_label = hap_labels[c_index].simplify_allele(detailed, cyp_translate);
+                let string_label = match detail_level {
+                    Cyp2d6DetailLevel::CoreAlleles => hap_label.simplify_allele(false, cyp_translate),
+                    Cyp2d6DetailLevel::SubAlleles => hap_label.simplify_allele(true, cyp_translate),
+                    Cyp2d6DetailLevel::DeepAlleles => format!("({})", hap_regions[c_index].deep_label()),
+                };
                 Some(string_label)
             } 
         })
@@ -925,6 +948,7 @@ mod tests {
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("1.002".to_string())),
             Cyp2d6RegionLabel::new(Cyp2d6RegionType::Cyp2d6, Some("1.002".to_string()))
         ];
+        let hap_regions: Vec<Cyp2d6Region> = hap_labels.into_iter().map(|l| Cyp2d6Region::new(l, None)).collect();
 
         // get the translator for testing
         let cyp2d6_config = Cyp2d6Config::default();
@@ -932,21 +956,23 @@ mod tests {
         
         // basic example
         let chain = vec![2, 2, 1, 0];
-        let hap = convert_chain_to_hap(&chain, &hap_labels, true, cyp_translate);
+        let hap = convert_chain_to_hap(&chain, &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
         assert_eq!(&hap, "*1.001 + *10x2"); // remember these get reversed
 
         // eventually this will get collapsed instead of separate
         let chain = vec![3, 1, 0];
-        let hap = convert_chain_to_hap(&chain, &hap_labels, true, cyp_translate);
+        let hap = convert_chain_to_hap(&chain, &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
         assert_eq!(&hap, "*1.001 + *1.002");
 
         // test the collapsed version
-        let hap = convert_chain_to_hap(&chain, &hap_labels, false, cyp_translate);
+        let hap = convert_chain_to_hap(&chain, &hap_regions, Cyp2d6DetailLevel::CoreAlleles, cyp_translate);
         assert_eq!(&hap, "*1x2");
 
         // tests if there are two near-identical alleles with the same name get collapsed
         let chain = vec![3, 4];
-        let hap = convert_chain_to_hap(&chain, &hap_labels, true, cyp_translate);
+        let hap = convert_chain_to_hap(&chain, &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);
         assert_eq!(&hap, "*1.002x2");
+
+        // TODO: do we need to test Cyp2d6DetailLevel::DeepAlleles? it's in the debug, not core outputs
     }
 }

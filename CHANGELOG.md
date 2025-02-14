@@ -1,3 +1,9 @@
+# v1.2.0
+## Changes
+- Added a new debug output file: `cyp2d6_alleles.json`
+  - This file contains additional details on the database variants that were identified in each reported _CYP2D6_ allele
+  - Full details are specified in the [Debug Outputs](./docs/debug_outputs.md#cyp2d6-alleles)
+
 # v1.1.0
 ## Changes
 - HLA data configuration has been automated to support future haplotype additions
