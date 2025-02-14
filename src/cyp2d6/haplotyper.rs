@@ -9,7 +9,9 @@ use simple_error::bail;
 use std::collections::BTreeMap;
 
 use crate::cyp2d6::definitions::{Cyp2d6Config, generate_cyp_hybrids};
+use crate::cyp2d6::region::Cyp2d6Region;
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
+use crate::cyp2d6::region_variants::{Cyp2d6RegionVariant, VariantAlleleRelationship};
 use crate::data_types::database::PgxDatabase;
 use crate::data_types::mapping::MappingStats;
 use crate::util::mapping::standard_hifi_aligner;
@@ -323,7 +325,7 @@ impl<'a> Cyp2d6Extractor<'a> {
     /// * if assigning haplotype labels to a base type fails
     pub fn find_full_type_in_sequence(
         &self, search_sequence: &str, max_missing_frac: f64, force_assignment: bool
-    ) -> Result<Cyp2d6RegionLabel, Box<dyn std::error::Error>> {
+    ) -> Result<Cyp2d6Region, Box<dyn std::error::Error>> {
         // for each sequence, figure out what it best matches in our targets
         // this should be full length matches UNLESS the consensus is incomplete
         // I think this means we want to use a penalized version
@@ -345,19 +347,20 @@ impl<'a> Cyp2d6Extractor<'a> {
             )
             .unwrap();
     
-        let final_type = if self.mapped_hybrids.contains(best_match.allele_label()) {
+        let final_result = if self.mapped_hybrids.contains(best_match.allele_label()) {
             debug!("\tConverting {} to full allele definition...", best_match.allele_label());
             self.assign_haplotype(
                 search_sequence.as_bytes(),
                 force_assignment
             )?
         } else {
-            best_match.allele_label().clone()
+            Cyp2d6Region::new(best_match.allele_label().clone(), None)
         };
-        Ok(final_type)
+        Ok(final_result)
     }
 
     /// This will take a chosen region from a sequence and deep genotype it in CYP2D6 using our WFA-based variant system.
+    /// It will also return the set of variants identified relative to the CYP2D6 allele.
     /// # Arguments
     /// * `sequence` - presumably matches a D6 allele that we want to find the best match for.
     /// * `force_assignment` - if True, then ambiguous results will be arbitrarily assigned one of the equal values
@@ -369,7 +372,7 @@ impl<'a> Cyp2d6Extractor<'a> {
         &self,
         sequence: &[u8],
         force_assignment: bool
-    ) -> Result<Cyp2d6RegionLabel, Box<dyn std::error::Error>> {
+    ) -> Result<Cyp2d6Region, Box<dyn std::error::Error>> {
         let cyp_coordinates = self.cyp2d6_config.cyp_coordinates();
         
         // get the relevant sequences from the reference
@@ -539,9 +542,63 @@ impl<'a> Cyp2d6Extractor<'a> {
             }
         };
 
+        let region_variants = if let Some(best_hap_vec) = self.haplotype_lookup.get(&best_id) {
+            let mut rv = vec![];
+            for (i, (&seq_value, &hap_value)) in alleles.iter().zip(best_hap_vec.iter()).enumerate() {
+                // hap_value will *always* be 0 or 1
+                assert!(hap_value == 0 || hap_value == 1); // 0 = ref, 1 = alt
+                assert!(seq_value <= 3); // 2 = ambiguous, 3 = unknown
+
+                let variant_state = if hap_value == 0 {
+                    // we are expecting reference here
+                    match seq_value {
+                        // seq is also reference, match
+                        0 => VariantAlleleRelationship::Match,
+                        // seq is alt, report unexpected
+                        1 => VariantAlleleRelationship::Unexpected,
+                        // seq is ambiguous, report ambig unexpected
+                        2 => VariantAlleleRelationship::AmbiguousUnexpected,
+                        // seq is unknown, which implies that it's on some other variant ALT path
+                        3 => VariantAlleleRelationship::UnknownUnexpected,
+                        _ => panic!("this should not happen")
+                    }
+                } else {
+                    match seq_value {
+                        // seq is reference, so this one is missing
+                        0 => VariantAlleleRelationship::Missing,
+                        // seq is also alt, match
+                        1 => VariantAlleleRelationship::Match,
+                        // seq is ambiguous, but we expected ALT
+                        2 => VariantAlleleRelationship::AmbiguousMissing,
+                        // seq is unknown, but we expected ALT
+                        3 => VariantAlleleRelationship::UnknownMissing,
+                        _ => panic!("this should not happen")
+                    }
+                };
+
+                if variant_state == VariantAlleleRelationship::Match && hap_value == 0 {
+                    // this is a REF allele that matches the REF; no need to report it
+                } else {
+                    // default to reporting everything else for now
+
+                    // shared regardless of state
+                    let label = self.loaded_variants.variant_label(i).to_string();
+                    let is_vi = self.loaded_variants.is_vi(i);
+
+                    rv.push(Cyp2d6RegionVariant::new(
+                        label, is_vi, variant_state
+                    ));
+                }
+            }
+            Some(rv)
+        } else {
+            // empty vec, this should only happen if we get Unknown result
+            None
+        };
+
         debug!("\t{} {best_id} -> {best_score:?}, ({:.4}, {:.4})", "", best_score.0 as f64 / self.loaded_variants.num_vi() as f64, best_score.1 as f64 / num_variants as f64);
 
-        Ok(best_id)
+        Ok(Cyp2d6Region::new(best_id, region_variants))
     }
 
     /// Returns the sequence for a given allele
@@ -568,6 +625,8 @@ pub struct LoadedVariants {
     ordered_variants: Vec<Variant>,
     /// a lookup from (position, REF, ALT) to index in `ordered_variants`
     variant_lookup: HashMap<(usize, String, String), usize>,
+    /// identifier for a variant, we will build one if none exists
+    variant_labels: Vec<String>,
     /// one-to-one with `ordered_variants`; if True, this variant had a VI flag
     is_vi: Vec<bool>
 }
@@ -577,18 +636,22 @@ impl LoadedVariants {
     /// # Arguments
     /// * `ordered_variants` - variants ordered by position and sequence
     /// * `variant_lookup` - a lookup from (position, REF, ALT) to index in `ordered_variants`
+    /// * `variant_labels` - a user-friendly label for the variant, which is usually an rsID
     /// * `is_vi` - one-to-one with `ordered_variants`; if True, this variant had a VI flag indicating that it distinguishes the core allele
     /// # Errors
     /// * if `ordered_variants`, `is_vi`, and `variant_lookup` do not all have the same number of entriesa
-    pub fn new(ordered_variants: Vec<Variant>, variant_lookup: HashMap<(usize, String, String), usize>, is_vi: Vec<bool>) -> Result<LoadedVariants, Box<dyn std::error::Error>> {
+    pub fn new(ordered_variants: Vec<Variant>, variant_lookup: HashMap<(usize, String, String), usize>, variant_labels: Vec<String>, is_vi: Vec<bool>) -> Result<LoadedVariants, Box<dyn std::error::Error>> {
         if ordered_variants.len() != is_vi.len() {
             bail!("ordered_variants and is_vi must be same length");
         }
         if ordered_variants.len() != variant_lookup.len() {
             bail!("ordered_variants and variant_lookup must be same length");
         }
+        if ordered_variants.len() != variant_labels.len() {
+            bail!("order_variants and variant_labels must be the same length");
+        }
         Ok(LoadedVariants {
-            ordered_variants, variant_lookup, is_vi
+            ordered_variants, variant_lookup, variant_labels, is_vi
         })
     }
 
@@ -629,6 +692,11 @@ impl LoadedVariants {
     pub fn num_vi(&self) -> usize {
         self.is_vi.iter().filter(|&x| *x).count()
     }
+
+    /// Returns the label of a given variant index
+    pub fn variant_label(&self, index: usize) -> &str {
+        &self.variant_labels[index]
+    }
 }
 
 /// This will parse the relevant CYP2D6 variants in preparation for using in GraphWFA
@@ -638,7 +706,7 @@ impl LoadedVariants {
 /// * if allele translation to UTF8 fails
 fn load_variant_database(database: &PgxDatabase) -> Result<LoadedVariants, Box<dyn std::error::Error>> {
     let mut inserted_variants: HashSet<(usize, String, String)> = Default::default();
-    let mut variant_list: Vec<Variant> = vec![];
+    let mut unsorted_variants = vec![];
     let mut vi_set: HashSet<(usize, String, String)> = Default::default();
     let mut all_set: HashSet<(usize, String, String)> = Default::default();
     for (_allele_id, allele_def) in database.cyp2d6_gene_def().iter() {
@@ -684,7 +752,15 @@ fn load_variant_database(database: &PgxDatabase) -> Result<LoadedVariants, Box<d
                         0, 1
                     )
                 };
-                variant_list.push(variant);
+
+                // also add the variant label
+                let label = match variant_def.id() {
+                    Some(id) => id.to_string(),
+                    None => variant_def.variant_string()
+                };
+
+                // add the variant and label as a tuple so sorting is preserved later
+                unsorted_variants.push((variant, label));
 
                 // mark this key as inserted
                 inserted_variants.insert(var_key);
@@ -692,8 +768,12 @@ fn load_variant_database(database: &PgxDatabase) -> Result<LoadedVariants, Box<d
         }
     }
 
-    // sort the variants so we can slice it up when we need to later
-    variant_list.sort_by_key(|v| v.position());
+    // sort the variants so we can slice it up when we need to later    
+    unsorted_variants.sort_by_key(|v| v.0.position());
+
+    // unzip the variant and labels
+    let (variant_list, variant_labels): (Vec<Variant>, Vec<String>) = unsorted_variants.into_iter().unzip();
+
     /*
     for v in variant_list.iter() {
         println!("{v:?}");
@@ -724,7 +804,7 @@ fn load_variant_database(database: &PgxDatabase) -> Result<LoadedVariants, Box<d
         variant_lookup.insert(var_key, i);
     }
 
-    LoadedVariants::new(variant_list, variant_lookup, is_vi_lookup)
+    LoadedVariants::new(variant_list, variant_lookup, variant_labels, is_vi_lookup)
 }
 
 /// Contains an allele name, the region it was found, and the mapping stats.

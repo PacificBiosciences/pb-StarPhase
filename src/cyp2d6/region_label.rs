@@ -87,6 +87,11 @@ impl Cyp2d6RegionLabel {
         }
     }
 
+    /// Converts this into a FalseAllele, preserving anything else that may be present.
+    pub fn mark_false_allele(&mut self) {
+        self.region_type = Cyp2d6RegionType::FalseAllele;
+    }
+
     /// This constructs a simplified version of a particular allele.
     /// E.g. CYP2D6*4.001 -> *4.001 (detailed) OR *4 (!detailed).
     /// CYP2D7 and other non-descript hybrid should retain the full allele def.

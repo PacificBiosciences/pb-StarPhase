@@ -99,6 +99,16 @@ impl VariantDefinition {
         })
     }
 
+    /// Constructs a variant string for instances where the id is not populated
+    pub fn variant_string(&self) -> String {
+        format!("{}:{}{}>{}", self.chrom, self.position+1, self.reference, self.alternate)
+    }
+
+    // getters
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
     pub fn position(&self) -> usize {
         self.position
     }

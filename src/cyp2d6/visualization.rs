@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use waffle_con::multi_consensus::MultiConsensus;
 
-use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
+use crate::cyp2d6::region::Cyp2d6Region;
+use crate::cyp2d6::region_label::Cyp2d6RegionType;
 use crate::data_types::coordinates::Coordinates;
 use crate::data_types::database::PgxDatabase;
 use crate::util::mapping::standard_hifi_aligner;
@@ -15,10 +16,10 @@ use crate::visualization::igv_session_writer::{BUFFER_LEN, CONTIG_POSTFIX};
 
 /// Accepts information about available alleles as well as the reads spanning those alleles and converts it into a visual graph.
 /// # Arguments
-/// * `hap_labels` - a list of haplotype region labels we can translate into visual Strings
+/// * `hap_regions` - a list of haplotype region labels we can translate into visual Strings
 /// * `chain_frequency` - this is the frequency of each observed chain from the data
 /// * `filename` - the output file path to save the results
-pub fn generate_debug_graph(hap_labels: &[Cyp2d6RegionLabel], chain_frequency: &BTreeMap<Vec<usize>, f64>, filename: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate_debug_graph(hap_regions: &[Cyp2d6Region], chain_frequency: &BTreeMap<Vec<usize>, f64>, filename: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use layout::backends::svg::SVGWriter;
     use layout::core::base::Orientation;
     use layout::core::color::Color;
@@ -29,7 +30,7 @@ pub fn generate_debug_graph(hap_labels: &[Cyp2d6RegionLabel], chain_frequency: &
     use layout::topo::layout::VisualGraph;
 
     // first lets part the chain frequencies into totals for edges and node
-    let mut single_counts = vec![0.0; hap_labels.len()];
+    let mut single_counts = vec![0.0; hap_regions.len()];
     let mut pair_counts: BTreeMap<(usize, usize), f64> = Default::default();
 
     for (chain, frequency) in chain_frequency.iter() {
@@ -48,12 +49,12 @@ pub fn generate_debug_graph(hap_labels: &[Cyp2d6RegionLabel], chain_frequency: &
 
     // create all the nodes with a count
     let mut node_handles = vec![];
-    for (i, hl) in hap_labels.iter().enumerate() {
-        if hl.is_allowed_label() {
+    for (i, hr) in hap_regions.iter().enumerate() {
+        if hr.label().is_allowed_label() {
             let shape = ShapeKind::Record(
                 RecordDef::Array(vec![
                     RecordDef::new_text(&i.to_string()),
-                    RecordDef::new_text(&hl.full_allele()),
+                    RecordDef::new_text(&hr.label().full_allele()),
                     RecordDef::new_text(&format!("{:.2}", single_counts[i]))
                 ])
             );
@@ -143,13 +144,13 @@ pub struct CustomReference {
 /// * `reference_genome` - the actual reference genome data (GRCh38)
 /// * `database` - the config we loaded
 /// * `consensus` - the multi-consensus result, which contains a bunch of sub-units from the D6 region
-/// * `hap_labels` - the assigned labels for each consensus
+/// * `hap_regions` - the assigned region labels for each consensus
 /// * `best_result` - the best chain pair; should be two Vecs of unknown length
 /// # Errors
 /// * if there are UTF-8 parsing errors
 pub fn create_custom_cyp2d6_reference(
     reference_genome: &ReferenceGenome, database: &PgxDatabase,
-    consensus: &MultiConsensus, hap_labels: &[Cyp2d6RegionLabel], best_result: &[Vec<usize>]
+    consensus: &MultiConsensus, hap_regions: &[Cyp2d6Region], best_result: &[Vec<usize>]
 ) -> Result<CustomReference, Box<dyn std::error::Error>> {
     // gene name followed by a post-fix for easier searching
     let contig_name = format!("CYP2D6_{CONTIG_POSTFIX}");
@@ -171,7 +172,7 @@ pub fn create_custom_cyp2d6_reference(
             ret.len() as u64,
             (ret.len() + hap_sequence.len()) as u64
         );
-        let region_name = format!("{hap_index}_{}", hap_labels[hap_index].full_allele());
+        let region_name = format!("{hap_index}_{}", hap_regions[hap_index]);
         regions.push((coordinates, region_name));
 
         // now extend our region
@@ -180,8 +181,8 @@ pub fn create_custom_cyp2d6_reference(
         // handle everything else in pairs so we can check for gaps to fill
         for (&prev_index, &hap_index) in haplotype_chain.iter().tuple_windows() {
             // get the types
-            let prev_type = hap_labels[prev_index].region_type();
-            let hap_type = hap_labels[hap_index].region_type();
+            let prev_type = hap_regions[prev_index].label().region_type();
+            let hap_type = hap_regions[hap_index].label().region_type();
             let mut overlap_len = 0; // for almost every case, there is no overlap
             if prev_type.is_rep() && hap_type.is_cyp2d() {
                 // we have a gap here to fill from the end of REP6 to the start of D6
@@ -255,7 +256,7 @@ pub fn create_custom_cyp2d6_reference(
             );
             
             // this mirrors what shows up in debug mode; I think that's fine to not have translations like *68 here for now
-            let region_name = format!("{hap_index}_{}", hap_labels[hap_index].full_allele());
+            let region_name = format!("{hap_index}_{}", hap_regions[hap_index]);
             regions.push((coordinates, region_name));
 
             // now extend our region
