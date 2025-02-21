@@ -147,7 +147,7 @@ impl GeneDefinition {
 }
 
 /// Contains all the gene definitions from a source, typically RefSeq (either URL or file).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct GeneCollection {
     /// Version string for the gene collection
     version: String,
@@ -341,9 +341,13 @@ impl GeneCollection {
     pub fn copy_missing_genes(&mut self, copy_keys: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
         for (copy_to_key, copy_from_key) in copy_keys.iter() {
             debug!("Copying gene definition for {copy_from_key} to {copy_to_key}...");
-            let copy_value = self.gene_dict.get(copy_from_key)
-                .ok_or(SimpleError::new(format!("Cannot copy definition from {copy_from_key} to {copy_to_key}; {copy_from_key} does not exist")))?
-                .clone();
+            let copy_value = match self.gene_dict.get(copy_from_key) {
+                Some(cv) => cv.clone(),
+                None => {
+                    warn!("Cannot copy definition from {copy_from_key} to {copy_to_key}; {copy_from_key} does not exist; skipping");
+                    continue;
+                }
+            };
             match self.gene_dict.entry(copy_to_key.clone()) {
                 Entry::Vacant(vacant_entry) => {
                     // we need to copy values into here

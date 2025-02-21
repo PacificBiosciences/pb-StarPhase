@@ -151,7 +151,7 @@ impl PgxGeneDetails {
 }
 
 /// Contains all the information related to a single gene's diplotype result
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Diplotype {
     /// short string for haplotype 1
     hap1: String,
@@ -198,6 +198,14 @@ impl Diplotype {
             self.hap2.clone()
         };
         format!("{h1}/{h2}")
+    }
+}
+
+impl PartialEq for Diplotype {
+    fn eq(&self, other: &Self) -> bool {
+        // this allows for a swap in hap1/hap2 and we still report identity
+        (self.hap1 == other.hap1 && self.hap2 == other.hap2) ||
+            (self.hap1 == other.hap2 && self.hap2 == other.hap1)
     }
 }
 

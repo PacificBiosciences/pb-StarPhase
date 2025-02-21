@@ -106,7 +106,7 @@ impl HlaConfig {
     /// * `gene_collection` - the collection of gene definitions that can get extended
     /// * `hla_sequences` - the dict of sequences that we need to handle
     /// * `reference_genome` - the pre-loaded reference genome which we will need to align the alleles to
-    pub fn new(mut gene_collection: GeneCollection, hla_sequences: &BTreeMap<String, HlaAlleleDefinition>, reference_genome: &ReferenceGenome) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(full_gene_collection: &GeneCollection, hla_sequences: &BTreeMap<String, HlaAlleleDefinition>, reference_genome: &ReferenceGenome) -> Result<Self, Box<dyn std::error::Error>> {
         // shared settings for mappings - we only need cigar and md for debugging
         // other settings for mapping
         let output_cigar: bool = false;
@@ -114,7 +114,23 @@ impl HlaConfig {
         let max_frag_len: Option<usize> = None;
         let extra_flags = None;
 
-        for (gene_name, gene_def) in gene_collection.gene_dict_mut().iter_mut() {
+        // first, take the provided collection and copy all the HLA genes into a new collection
+        let hla_gene_dict = full_gene_collection.gene_dict().iter()
+            .filter_map(|(gene, gene_def)| {
+                if SUPPORTED_HLA_GENES.contains(gene) {
+                    Some((gene.clone(), gene_def.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut hla_gene_collection = GeneCollection::new(full_gene_collection.version().to_string(), hla_gene_dict);
+
+        // here's where we add anything that's missing from RefSeq coordinates
+        hla_gene_collection.copy_missing_genes(&HLA_COORDINATE_COPIES)?;
+
+        // now iterate over this collection and do all the normal HLA changes
+        for (gene_name, gene_def) in hla_gene_collection.gene_dict_mut().iter_mut() {
             // check if this gene can be missing
             if ABSENT_HLA_GENES.contains(gene_name) {
                 debug!("Marking {gene_name} as absent capable.");
@@ -186,7 +202,7 @@ impl HlaConfig {
         }
 
         Ok(Self {
-            gene_collection
+            gene_collection: hla_gene_collection
         })
     }
 
@@ -523,7 +539,7 @@ mod tests {
         // load the config
         let fasta_fn = PathBuf::from("./test_data/refseq_faux/hg38_chr6_masked.fa.gz");
         let reference_genome = ReferenceGenome::from_fasta(&fasta_fn).unwrap();
-        let config = HlaConfig::new(gene_collection, &hla_sequences, &reference_genome).unwrap();
+        let config = HlaConfig::new(&gene_collection, &hla_sequences, &reference_genome).unwrap();
 
         // test the results
         let default_config = HlaConfig::default();

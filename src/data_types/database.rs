@@ -5,18 +5,30 @@ use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use serde::{Deserialize, Serialize};
 use simple_error::{SimpleError, bail};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry::{Occupied, Vacant};
 
 use crate::cyp2d6::definitions::Cyp2d6Config;
 use crate::data_types::alleles::AlleleDefinition;
 use crate::data_types::cpic_api_results::CpicAlleleDefinition;
 use crate::data_types::gene_definition::GeneCollection;
-use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig, SUPPORTED_HLA_GENES, HLA_COORDINATE_COPIES};
+use crate::data_types::pgx_structural_variants::{PgxStructuralVariants, FullDeletion};
+use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig, SUPPORTED_HLA_GENES};
+
+use super::pgx_structural_variants::PartialDeletion;
+
+// gene names to prevent dev typos
+const CYP2C18: &str = "CYP2C18";
+const CYP2C19: &str = "CYP2C19";
+const CYP2D6: &str = "CYP2D6";
+const HELLS: &str = "HELLS";
+const HLA_A: &str = "HLA-A";
+const HLA_B: &str = "HLA-B";
+const TBC1D12: &str = "TBC1D12";
 
 lazy_static!{
     static ref CPIC_IGNORED_LIST: Vec<&'static str> = vec![
-        "CYP2D6", "HLA-A", "HLA-B"
+        CYP2D6, HLA_A, HLA_B
     ];
     static ref CPIC_IGNORED_GENES: HashSet<&'static str> = {
         let mut hs = HashSet::default();
@@ -25,6 +37,73 @@ lazy_static!{
         }
         hs
     };
+
+    // hard-coded set of known deletions
+    // CYP2C19 reference: https://a.storyblok.com/f/70677/x/9225fa2a03/variation_cyp2c19.pdf
+
+    // first the full deletions
+    static ref CPIC_FULL_DELETIONS: BTreeMap<(String, String), FullDeletion> = {
+        let full_deletions = [
+            // generic full deletion
+            (CYP2C19, "*36", FullDeletion::new(true, [CYP2C19].iter().map(|s| s.to_string()).collect())),
+            // specific full deletions
+            (CYP2C19, "*36.001", FullDeletion::new(false, [CYP2C19, CYP2C18, HELLS].iter().map(|s| s.to_string()).collect())),
+            (CYP2C19, "*36.002", FullDeletion::new(false, [CYP2C19, CYP2C18, HELLS, TBC1D12].iter().map(|s| s.to_string()).collect()))
+        ];
+        full_deletions.into_iter()
+            .map(|(gene, hap, event)| {
+                ((gene.to_string(), hap.to_string()), event)
+            })
+            .collect()
+    };
+
+    // now the partial deletions
+    static ref CPIC_PARTIAL_DELETIONS: BTreeMap<(String, String), PartialDeletion> = {
+        let partial_deletions = [
+            // generic partial deletion
+            (CYP2C19, "*37", PartialDeletion::new(true,
+                [
+                    (CYP2C19, 0..9)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            )),
+            // more precise partial deletions
+            (CYP2C19, "*37.001", PartialDeletion::new(false,
+                [
+                    // nothing deleted in C18
+                    (CYP2C19, 0..5)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            )),
+            (CYP2C19, "*37.002", PartialDeletion::new(false,
+                [
+                    (CYP2C18, 7..9),
+                    (CYP2C19, 0..4)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            )),
+            (CYP2C19, "*37.003", PartialDeletion::new(false,
+                [
+                    (CYP2C18, 0..9),
+                    (CYP2C19, 0..1)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            )),
+            (CYP2C19, "*37.004", PartialDeletion::new(false,
+                [
+                    (CYP2C18, 4..9),
+                    (CYP2C19, 0..7)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            )),
+            (CYP2C19, "*37.005", PartialDeletion::new(false,
+                [
+                    (CYP2C18, 1..9),
+                    (CYP2C19, 0..7)
+                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
+            ))
+        ];
+        partial_deletions.into_iter()
+            .map(|(gene, hap, event)| {
+                ((gene.to_string(), hap.to_string()), event)
+            })
+            .collect()
+    };
 }
 
 /// This is the full set of PGx information that we have available
@@ -32,6 +111,9 @@ lazy_static!{
 pub struct PgxDatabase {
     /// Metadata for the database
     database_metadata: PgxMetadata,
+    /// RefSeq gene entries
+    #[serde(default)] // old database versions did not have gene_collection, set to default if missing
+    gene_collection: GeneCollection,
     /// This is a map from gene name to all of the relevant information for that gene
     gene_entries: BTreeMap<String, PgxGene>,
     /// The configuration for HLA genes
@@ -100,6 +182,50 @@ impl PgxDatabase {
             gene_entry.add_allele(allele_def)?;
         }
 
+        // go through all the default SV events and add them
+        debug!("Adding CPIC structural variants...");
+        let mut cpic_sv_genes: BTreeSet<String> = Default::default();
+        for ((gene, allele), event) in CPIC_FULL_DELETIONS.iter() {
+            // make sure are not ignoring this gene
+            if CPIC_IGNORED_GENES.contains(gene.as_str()) {
+                continue;
+            }
+
+            // check if the gene has an entry; this should really only fail in our unit testing
+            if let Some(gene_entry) = gene_entries.get_mut(gene) {
+                // add it now
+                debug!("\tAdding: {gene}*{allele} => {event:?}");
+                gene_entry.add_full_deletion(allele.clone(), event.clone())?;
+
+                // add any relevent genes to our RefSeq lookup
+                for gene in event.full_genes_deleted().iter() {
+                    cpic_sv_genes.insert(gene.clone());
+                }
+            } else {
+                warn!("An SV allele definition was provided for {gene}, but it was not found in the gene to chromosome list; skipping.");
+            }
+        }
+
+        for ((gene, allele), event) in CPIC_PARTIAL_DELETIONS.iter() {
+            // make sure are not ignoring this gene
+            if CPIC_IGNORED_GENES.contains(gene.as_str()) {
+                continue;
+            }
+
+            // check if the gene has an entry; this should really only fail in our unit testing
+            if let Some(gene_entry) = gene_entries.get_mut(gene) {
+                debug!("\tAdding: {gene}*{allele} => {event:?}");
+                gene_entry.add_partial_deletion(allele.clone(), event.clone())?;
+
+                // add any relevent genes to our RefSeq lookup
+                for gene in event.exons_deleted().keys() {
+                    cpic_sv_genes.insert(gene.clone());
+                }
+            } else {
+                warn!("An SV allele definition was provided for {gene}, but it was not found in the gene to chromosome list; skipping.");
+            }
+        }
+
         // go through the list and remove any genes with no defined alleles
         let filtered_entries: BTreeMap<String, PgxGene> = BTreeMap::from_iter(
             gene_entries.into_iter()
@@ -114,6 +240,7 @@ impl PgxDatabase {
             })
         );
 
+        // build the metadata for saving to the database output
         let build_time = chrono::Utc::now();
         let cpic_version = format!("API-{}", build_time.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
         let database_metadata = PgxMetadata { 
@@ -124,25 +251,28 @@ impl PgxDatabase {
             build_time
         };
 
+        // add the HLA genes as well
+        cpic_sv_genes.extend(SUPPORTED_HLA_GENES.iter().cloned());
+
         // generate the default configs here
+        // the CPIC config requires coordinates for interpreting any SVs into known forms
         // TODO: do we want to allow users to ultimately specify a file and/or URL? maybe if requested
-        let mut gene_collection = if let Some(filename) = opt_refseq_fn {
+        let full_gene_collection = if let Some(filename) = opt_refseq_fn {
             // this is really just for unit testing locally
-            GeneCollection::load_refseq_file(filename, Some(&SUPPORTED_HLA_GENES))?
+            GeneCollection::load_refseq_file(filename, Some(&cpic_sv_genes))?
         } else {
             // standard path pulls the latest refseq
-            GeneCollection::load_refseq_url(None, Some(&SUPPORTED_HLA_GENES))?
+            GeneCollection::load_refseq_url(None, Some(&cpic_sv_genes))?
         };
 
-        // here's where we add anything that's missing from RefSeq coordinates
-        gene_collection.copy_missing_genes(&HLA_COORDINATE_COPIES)?;
-
-        let hla_config = HlaConfig::new(gene_collection, &hla_sequences, reference_genome)?;
+        // build the HLA and CYP2D6 configs
+        let hla_config = HlaConfig::new(&full_gene_collection, &hla_sequences, reference_genome)?;
         let cyp2d6_config = Cyp2d6Config::default();
 
         // if we made it here, we're all good yo
         Ok(PgxDatabase {
             database_metadata,
+            gene_collection: full_gene_collection,
             gene_entries: filtered_entries,
             hla_config,
             hla_sequences,
@@ -163,6 +293,10 @@ impl PgxDatabase {
 
     pub fn database_metadata(&self) -> &PgxMetadata {
         &self.database_metadata
+    }
+
+    pub fn gene_collection(&self) -> &GeneCollection {
+        &self.gene_collection
     }
 
     pub fn gene_entries(&self) -> &BTreeMap<String, PgxGene> {
@@ -211,6 +345,9 @@ pub struct PgxGene {
     chromosome: String,
     /// Variants by their provided ID
     variants: BTreeMap<u64, PgxVariant>,
+    /// Any defined structural variants associated with this gene
+    #[serde(default)] // will populate with our default() if not in the file; which is None
+    structural_variants: Option<PgxStructuralVariants>,
     /// Each name points to an allele that contains variants in the same order as "ordered_variants"
     defined_haplotypes: BTreeMap<String, PgxHaplotype>,
     /// The allele corresponding to reference, it is the only one that will typically be "full" on the PgxHaplotype definition
@@ -227,6 +364,7 @@ impl PgxGene {
             gene_name: gene_name.to_string(), 
             chromosome: chromosome.to_string(), 
             variants: Default::default(),
+            structural_variants: None,
             defined_haplotypes: Default::default(),
             reference_allele: None
         }
@@ -351,6 +489,32 @@ impl PgxGene {
         Ok(())
     }
 
+    /// Adds a full deletion event to the alleles for this gene
+    /// * `label` - the label (i.e. genotype) for this event
+    /// * `event` - the full deletion to add
+    pub fn add_full_deletion(&mut self, label: String, event: FullDeletion) -> Result<(), Box<dyn std::error::Error>> {
+        if self.structural_variants.is_none() {
+            self.structural_variants = Some(Default::default());
+        }
+
+        let sv_db = self.structural_variants.as_mut().unwrap();
+        sv_db.add_full_deletion(label, event)?;
+        Ok(())
+    }
+
+    /// Adds a partial deletion event to the alleles for this gene
+    /// * `label` - the label (i.e. genotype) for this event
+    /// * `event` - the full deletion to add
+    pub fn add_partial_deletion(&mut self, label: String, event: PartialDeletion) -> Result<(), Box<dyn std::error::Error>> {
+        if self.structural_variants.is_none() {
+            self.structural_variants = Some(Default::default());
+        }
+
+        let sv_db = self.structural_variants.as_mut().unwrap();
+        sv_db.add_partial_deletion(label, event)?;
+        Ok(())
+    }
+
     pub fn gene_name(&self) -> &str {
         &self.gene_name
     }
@@ -365,6 +529,10 @@ impl PgxGene {
 
     pub fn variants(&self) -> &BTreeMap<u64, PgxVariant> {
         &self.variants
+    }
+
+    pub fn structural_variants(&self) -> Option<&PgxStructuralVariants> {
+        self.structural_variants.as_ref()
     }
 
     pub fn defined_haplotypes(&self) -> &BTreeMap<String, PgxHaplotype> {
@@ -516,7 +684,7 @@ mod tests {
         // check the CYP2D6 stuff
         assert_eq!(pgx_database.database_metadata().pharmvar_version, pharmvar_version);
         let base_entry = pgx_database.cyp2d6_gene_def().get("PV00124").unwrap();
-        assert_eq!(base_entry.gene_name(), "CYP2D6");
+        assert_eq!(base_entry.gene_name(), CYP2D6);
         assert_eq!(base_entry.star_allele(), "1");
         assert_eq!(base_entry.variants(), &[]);
     }

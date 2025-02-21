@@ -15,3 +15,5 @@ pub mod mapping;
 pub mod normalized_variant;
 /// Contains definitions related to the representation of a final diplotype
 pub mod pgx_diplotypes;
+/// Contains functionality for support CPIC structural variants
+pub mod pgx_structural_variants;
