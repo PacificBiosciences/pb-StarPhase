@@ -81,7 +81,7 @@ pbstarphase diplotype \
 ```
 
 ## Structural variant diplotyping
-Starting with v1.3.0, pb-StarPhase includes support structural variants provided from an external program.
+Starting with v1.3.0, pb-StarPhase includes support for structural variants provided from an external program.
 To enable structural variants (SVs), an additional VCF file must be provided using the `--sv-vcf` parameter:
 
 ```bash
@@ -91,7 +91,7 @@ pbstarphase diplotype \
     ...
 ```
 
-We recommend generating SV calls using [sawfish](https://github.com/PacificBiosciences/sawfish), and then joint phasing them with the small variants using [HiPhase](https://github.com/PacificBiosciences/HiPhase).
+We recommend generating SV calls using [sawfish](https://github.com/PacificBiosciences/sawfish), and then jointly phasing them with small variants using [HiPhase](https://github.com/PacificBiosciences/HiPhase).
 This will generate structural variants with complementary phase information to the small variants.
 While phasing is not required for StarPhase, it significantly reduces the ambiguity of output diplotypes.
 
