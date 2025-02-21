@@ -1,3 +1,9 @@
+# v1.3.0
+## Changes
+- Adds support for externally called structural variants and corresponding PGx haplotypes
+  - A new option `--sv-vcf` can be used to provide a structural variant VCF file from pbsv or sawfish
+  - Updated the database build to include _CYP2C19_ known whole-gene (\*36) and partial-gene deletions (\*37) based on PharmVar definitions
+
 # v1.2.0
 ## Changes
 - Added a new debug output file: `cyp2d6_alleles.json`

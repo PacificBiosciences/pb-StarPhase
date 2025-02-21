@@ -59,7 +59,6 @@ pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     let hla_data: BTreeMap<String, HlaAlleleDefinition> = get_hla_sequences(&latest_hla_version)?;
 
     // finally, get the PharmVar CYP2D6 data
-    // let (pharmvar_version, cyp2d6_data) = get_pharmvar_sequences("CYP2D6", "current")?;
     let (pharmvar_version, cyp2d6_data) = get_pharmvar_variants("CYP2D6", "current")?;
     info!("Found latest PharmVar version: {pharmvar_version}");
 

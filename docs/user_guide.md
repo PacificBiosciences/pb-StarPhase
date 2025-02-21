@@ -80,6 +80,24 @@ pbstarphase diplotype \
     ...
 ```
 
+## Structural variant diplotyping
+Starting with v1.3.0, pb-StarPhase includes support structural variants provided from an external program.
+To enable structural variants (SVs), an additional VCF file must be provided using the `--sv-vcf` parameter:
+
+```bash
+pbstarphase diplotype \
+    --vcf ${VCF} \
+    --sv-vcf ${SV_VCF} \
+    ...
+```
+
+We recommend generating SV calls using [sawfish](https://github.com/PacificBiosciences/sawfish), and then joint phasing them with the small variants using [HiPhase](https://github.com/PacificBiosciences/HiPhase).
+This will generate structural variants with complementary phase information to the small variants.
+While phasing is not required for StarPhase, it significantly reduces the ambiguity of output diplotypes.
+
+The database for v1.3.0 includes deletion SVs for _CYP2C19_, and we note that SVs in additional genes may get support in future releases.
+If you have an SV you would like covered, please let us know with a GitHub issue.
+
 # Supported upstream processes
 The following upstream processes are supported as inputs to pb-StarPhase:
 
@@ -123,6 +141,11 @@ Fields are described below, with a partial example further down:
       * `position` - The **0-based** position along the chromosome.
       * `reference` - The reference sequence at this position.
       * `alternate` - The alternate (variant) sequence at this position.
+      * `sv_stats` - Optional field that only applies to structural variants
+        * `sv_type` - The corresponding type of structural variant
+        * `start` - Start coordinate of the structural variant
+        * `end` - End coordinate of the structural variant
+        * `haplotype_label` - A label that is assigned to the structural variant based on the database definitions
     * `normalized_genotype` - Describes the associated genotype after genotype normalization.
       * `genotype` - This will almost always match the genotype (GT) from the VCF file; multi-allelic sites will get converted into one of the following: `[0/0, 0/1, 0|1, 1|0, 1/1]`.
       * `phase_set` - A phase set ID (PS) from the VCF file; this will be `null` for unphased or homozygous variants. Note that variants on different phase sets are _not_ considered phased with each other (they are effectively, unphased).

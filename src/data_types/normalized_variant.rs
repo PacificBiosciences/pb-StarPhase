@@ -4,7 +4,7 @@ use regex::Regex;
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::FxHashSet as HashSet;
 use serde::Serialize;
-use simple_error::bail;
+use simple_error::{SimpleError, bail};
 
 lazy_static! {
     /// This matches tandem-repeat like patterns: AC(8) OR ACGTAGT(3).
@@ -13,7 +13,7 @@ lazy_static! {
 }
 
 /// A normalized variant is unambiguously defined and left-aligned to the reference genome
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct NormalizedVariant {
     /// chromosome of the variant
     chrom: String,
@@ -22,7 +22,9 @@ pub struct NormalizedVariant {
     /// ref allele
     reference: String,
     /// alt allele
-    alternate: String
+    alternate: String,
+    /// contains relevant SV statistics if this is an SV variant
+    sv_stats: Option<StructuralVariantStats>
 }
 
 impl NormalizedVariant {
@@ -150,7 +152,8 @@ impl NormalizedVariant {
                 chrom,
                 position,
                 reference,
-                alternate
+                alternate,
+                sv_stats: None
             })
         } else {
             bail!("ACGT alleles only");
@@ -203,12 +206,41 @@ impl NormalizedVariant {
         Ok(ret)
     }
 
+    /// Constructor for a structural variant.
+    /// No normalization actually happens here, but it collects stats for translating into haplotypes later.
+    /// # Arguments
+    /// * `sv_type` - the type of SV detected
+    /// * `chrom` - chromosome
+    /// * `position` - the start of the event
+    /// * `end` - the end coordinate of the event
+    /// * `haplotype_label` - the PGx haplotype that this event matches
+    pub fn new_sv(sv_type: SvType, chrom: String, position: usize, end: usize, haplotype_label: String) -> Result<Self, SimpleError> {
+        let sv_stats = Some(StructuralVariantStats::new(sv_type, position, end, haplotype_label)?);
+        Ok(Self {
+            chrom,
+            position,
+            reference: Default::default(),
+            alternate: Default::default(),
+            sv_stats
+        })
+    }
+
+    /// Returns true if this variant has SV statistics associated with it
+    pub fn is_sv(&self) -> bool {
+        self.sv_stats.is_some()
+    }
+
+    // getters
     pub fn chrom(&self) -> &str {
         &self.chrom
     }
 
     pub fn position(&self) -> usize {
         self.position
+    }
+
+    pub fn sv_stats(&self) -> Option<&StructuralVariantStats> {
+        self.sv_stats.as_ref()
     }
 }
 
@@ -232,6 +264,59 @@ fn parse_sequence(sequence: &str) -> Vec<u8> {
         vec![]
     } else {
         sequence.as_bytes().to_vec()
+    }
+}
+
+/// Enum for SV types
+#[derive(Clone, Copy, Debug, strum_macros::Display, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum SvType {
+    /// Anything we haven't set an enum for yet
+    Unknown,
+    /// Deletion is the only one we currently care about
+    Deletion
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct StructuralVariantStats {
+    /// The associated SV type
+    sv_type: SvType,
+    /// The 0-based, inclusive start of the SV
+    start: usize,
+    /// The 0-based, exclusive end of the SV
+    end: usize,
+    /// Label that matches a known PGx haplotype
+    haplotype_label: String
+}
+
+impl StructuralVariantStats {
+    /// Constructor
+    pub fn new(sv_type: SvType, start: usize, end: usize, haplotype_label: String) -> Result<Self, SimpleError> {
+        if start >= end {
+            bail!("SV definition requires that start < end");
+        }
+        Ok(Self {
+            sv_type,
+            start,
+            end,
+            haplotype_label
+        })
+    }
+
+    // getters
+    pub fn sv_type(&self) -> SvType {
+        self.sv_type
+    }
+
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.end
+    }
+
+    pub fn haplotype_label(&self) -> &str {
+        &self.haplotype_label
     }
 }
 
@@ -381,7 +466,8 @@ mod tests {
             chrom,
             position,
             reference,
-            alternate
+            alternate,
+            sv_stats: None
         });
     }
 
@@ -408,7 +494,8 @@ mod tests {
             chrom,
             position,
             reference: "A".to_string(),
-            alternate: "AC".to_string()
+            alternate: "AC".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -427,7 +514,8 @@ mod tests {
             chrom,
             position,
             reference: "A".to_string(),
-            alternate: "AC".to_string()
+            alternate: "AC".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -446,7 +534,8 @@ mod tests {
             chrom,
             position: 12,
             reference: "A".to_string(),
-            alternate: "AC".to_string()
+            alternate: "AC".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -465,7 +554,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "A".to_string(),
-            alternate: "AACAC".to_string()
+            alternate: "AACAC".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -484,7 +574,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "AAC".to_string(),
-            alternate: "A".to_string()
+            alternate: "A".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -503,7 +594,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "AAC".to_string(),
-            alternate: "A".to_string()
+            alternate: "A".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -535,7 +627,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "CAGT".to_string(),
-            alternate: "C".to_string()
+            alternate: "C".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -567,7 +660,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "C".to_string(),
-            alternate: "CAGT".to_string()
+            alternate: "CAGT".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -586,7 +680,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "CAGT".to_string(),
-            alternate: "C".to_string()
+            alternate: "C".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -605,7 +700,8 @@ mod tests {
             chrom,
             position,
             reference: "A".to_string(),
-            alternate: "CGG".to_string()
+            alternate: "CGG".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -624,7 +720,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "CAGT".to_string(),
-            alternate: "C".to_string()
+            alternate: "C".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -643,7 +740,8 @@ mod tests {
             chrom,
             position: 9,
             reference: "C".to_string(),
-            alternate: "CAGT".to_string()
+            alternate: "CAGT".to_string(),
+            sv_stats: None
         };
         assert_eq!(nv, expected);
     }
@@ -664,7 +762,8 @@ mod tests {
                 chrom,
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "G".to_string()
+                alternate: "G".to_string(),
+                sv_stats: None
             })
         ];
         assert_eq!(nv, expected);
@@ -685,13 +784,15 @@ mod tests {
                 chrom: chrom.clone(),
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "C".to_string()
+                alternate: "C".to_string(),
+                sv_stats: None
             }),
             Some(NormalizedVariant {
                 chrom,
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "T".to_string()
+                alternate: "T".to_string(),
+                sv_stats: None
             })
         ];
         assert_eq!(nv, expected);
@@ -712,19 +813,22 @@ mod tests {
                 chrom: chrom.clone(),
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "C".to_string()
+                alternate: "C".to_string(),
+                sv_stats: None
             }),
             Some(NormalizedVariant {
                 chrom: chrom.clone(),
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "CC".to_string()
+                alternate: "CC".to_string(),
+                sv_stats: None
             }),
             Some(NormalizedVariant {
                 chrom,
                 position: 10,
                 reference: "A".to_string(),
-                alternate: "CCC".to_string()
+                alternate: "CCC".to_string(),
+                sv_stats: None
             })
         ];
         assert_eq!(nv, expected);

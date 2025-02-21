@@ -34,6 +34,13 @@ pub struct DiplotypeSettings {
     #[clap(help_heading = Some("Input/Output"))]
     pub vcf_filename: Option<PathBuf>,
 
+    /// Input structural variant file in VCF format
+    #[clap(short = 's')]
+    #[clap(long = "sv-vcf")]
+    #[clap(value_name = "VCF")]
+    #[clap(help_heading = Some("Input/Output"))]
+    pub sv_vcf_filename: Option<PathBuf>,
+
     /// Input alignment file in BAM format, can be specified multiple times; required for HLA diplotyping
     #[clap(short = 'b')]
     #[clap(long = "bam")]
@@ -184,6 +191,7 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
     check_required_filename(&settings.input_database, "Database JSON");
     check_required_filename(&settings.reference_filename, "Reference FASTA");
     check_optional_filename(settings.vcf_filename.as_deref(), "VCF file");
+    check_optional_filename(settings.sv_vcf_filename.as_deref(), "SV VCF file");
 
     // these are optional, but make sure that any specified exist
     for bam_fn in settings.bam_filenames.iter() {
@@ -195,6 +203,11 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
     info!("\tReference: {:?}", &settings.reference_filename);
     if let Some(vcf_fn) = settings.vcf_filename.as_ref() {
         info!("\tVCF: {:?}", vcf_fn);
+        if let Some(sv_fn) = settings.sv_vcf_filename.as_ref() {
+            info!("\tSV VCF: {:?}", sv_fn);
+        } else {
+            info!("\tSV VCF: None");
+        }
     } else {
         warn!("\tVCF: No variant call files provided, all variant-based diplotyping is disabled")
     }
