@@ -1,8 +1,7 @@
 
-use lazy_static::lazy_static;
 use log::{debug, warn};
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use rustc_hash::FxHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use simple_error::{SimpleError, bail};
 use std::collections::{BTreeMap, BTreeSet};
@@ -10,101 +9,13 @@ use std::collections::btree_map::Entry::{Occupied, Vacant};
 
 use crate::cyp2d6::definitions::Cyp2d6Config;
 use crate::data_types::alleles::AlleleDefinition;
+use crate::data_types::db_const::{CPIC_IGNORED_GENES, CPIC_FULL_DELETIONS, CPIC_PARTIAL_DELETIONS};
 use crate::data_types::cpic_api_results::CpicAlleleDefinition;
 use crate::data_types::gene_definition::GeneCollection;
 use crate::data_types::pgx_structural_variants::{PgxStructuralVariants, FullDeletion};
 use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig, SUPPORTED_HLA_GENES};
 
 use super::pgx_structural_variants::PartialDeletion;
-
-// gene names to prevent dev typos
-const CYP2C18: &str = "CYP2C18";
-const CYP2C19: &str = "CYP2C19";
-const CYP2D6: &str = "CYP2D6";
-const HELLS: &str = "HELLS";
-const HLA_A: &str = "HLA-A";
-const HLA_B: &str = "HLA-B";
-const TBC1D12: &str = "TBC1D12";
-
-lazy_static!{
-    static ref CPIC_IGNORED_LIST: Vec<&'static str> = vec![
-        CYP2D6, HLA_A, HLA_B
-    ];
-    static ref CPIC_IGNORED_GENES: HashSet<&'static str> = {
-        let mut hs = HashSet::default();
-        for &element in CPIC_IGNORED_LIST.iter() {
-            hs.insert(element);
-        }
-        hs
-    };
-
-    // hard-coded set of known deletions
-    // CYP2C19 reference: https://a.storyblok.com/f/70677/x/9225fa2a03/variation_cyp2c19.pdf
-
-    // first the full deletions
-    static ref CPIC_FULL_DELETIONS: BTreeMap<(String, String), FullDeletion> = {
-        let full_deletions = [
-            // generic full deletion
-            (CYP2C19, "*36", FullDeletion::new(true, [CYP2C19].iter().map(|s| s.to_string()).collect())),
-            // specific full deletions
-            (CYP2C19, "*36.001", FullDeletion::new(false, [CYP2C19, CYP2C18, HELLS].iter().map(|s| s.to_string()).collect())),
-            (CYP2C19, "*36.002", FullDeletion::new(false, [CYP2C19, CYP2C18, HELLS, TBC1D12].iter().map(|s| s.to_string()).collect()))
-        ];
-        full_deletions.into_iter()
-            .map(|(gene, hap, event)| {
-                ((gene.to_string(), hap.to_string()), event)
-            })
-            .collect()
-    };
-
-    // now the partial deletions
-    static ref CPIC_PARTIAL_DELETIONS: BTreeMap<(String, String), PartialDeletion> = {
-        let partial_deletions = [
-            // generic partial deletion
-            (CYP2C19, "*37", PartialDeletion::new(true,
-                [
-                    (CYP2C19, 0..9)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            )),
-            // more precise partial deletions
-            (CYP2C19, "*37.001", PartialDeletion::new(false,
-                [
-                    // nothing deleted in C18
-                    (CYP2C19, 0..5)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            )),
-            (CYP2C19, "*37.002", PartialDeletion::new(false,
-                [
-                    (CYP2C18, 7..9),
-                    (CYP2C19, 0..4)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            )),
-            (CYP2C19, "*37.003", PartialDeletion::new(false,
-                [
-                    (CYP2C18, 0..9),
-                    (CYP2C19, 0..1)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            )),
-            (CYP2C19, "*37.004", PartialDeletion::new(false,
-                [
-                    (CYP2C18, 4..9),
-                    (CYP2C19, 0..7)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            )),
-            (CYP2C19, "*37.005", PartialDeletion::new(false,
-                [
-                    (CYP2C18, 1..9),
-                    (CYP2C19, 0..7)
-                ].into_iter().map(|(s, r)| (s.to_string(), r)).collect()
-            ))
-        ];
-        partial_deletions.into_iter()
-            .map(|(gene, hap, event)| {
-                ((gene.to_string(), hap.to_string()), event)
-            })
-            .collect()
-    };
-}
 
 /// This is the full set of PGx information that we have available
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -194,7 +105,7 @@ impl PgxDatabase {
             // check if the gene has an entry; this should really only fail in our unit testing
             if let Some(gene_entry) = gene_entries.get_mut(gene) {
                 // add it now
-                debug!("\tAdding: {gene}*{allele} => {event:?}");
+                debug!("\tAdding: {gene}{allele} => {event:?}");
                 gene_entry.add_full_deletion(allele.clone(), event.clone())?;
 
                 // add any relevent genes to our RefSeq lookup
@@ -214,7 +125,7 @@ impl PgxDatabase {
 
             // check if the gene has an entry; this should really only fail in our unit testing
             if let Some(gene_entry) = gene_entries.get_mut(gene) {
-                debug!("\tAdding: {gene}*{allele} => {event:?}");
+                debug!("\tAdding: {gene}{allele} => {event:?}");
                 gene_entry.add_partial_deletion(allele.clone(), event.clone())?;
 
                 // add any relevent genes to our RefSeq lookup
@@ -596,6 +507,7 @@ mod tests {
 
     use std::path::PathBuf;
 
+    use crate::data_types::db_const::CYP2D6;
     use crate::util::file_io::load_json;
 
     #[test]
