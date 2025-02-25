@@ -265,7 +265,7 @@ impl GeneCollection {
                         };
                     }
                 },
-                "gene" => {
+                "pseudogene" | "gene" => {
                     // check if this is a passing gene entry
                     if let Some((gene_name, is_forward_strand)) = parse_record_gene_def(&record, gene_targets) {
                         // we will need full coordinates for later, parse them out here
@@ -280,7 +280,7 @@ impl GeneCollection {
                         };
                     }
                 },
-                "mRNA" => {
+                "transcript" | "mRNA" => {
                     if let Some((transcript_id, gene_name, is_forward_strand)) = parse_record_mrna_def(&record, gene_targets) {
                         debug!("MANE trancript update: {transcript_id} -> {gene_name}");
 
@@ -416,7 +416,7 @@ fn parse_record_to_chromosome(record: &gff::Record) -> Option<(String, String)> 
 /// * `gene_targets` - an optional set of genes that are allowed; if None, then all genes are allowed
 fn parse_record_gene_def(record: &gff::Record, gene_targets: Option<&BTreeSet<String>>) -> Option<(String, bool)> {
     // only gene records
-    if record.feature_type() == "gene" &&
+    if (record.feature_type() == "gene" || record.feature_type() == "pseudogene") &&
         // best ref seq is what we trust here; contains is because sometimes the entries have multiple like "BestRefSeq%2CGnomon"
         record.source().contains("BestRefSeq") &&
         // there are spurious records on the other contigs, so lets filter to the "NC_" prefixed for now
@@ -452,7 +452,7 @@ fn parse_record_gene_def(record: &gff::Record, gene_targets: Option<&BTreeSet<St
 /// * `record` - the record to parse
 /// * `gene_targets` - an optional set of genes that are allowed; if None, then all genes are allowed
 fn parse_record_mrna_def(record: &gff::Record, gene_targets: Option<&BTreeSet<String>>) -> Option<(String, String, bool)> {
-    if record.feature_type() == "mRNA" &&
+    if (record.feature_type() == "mRNA" || record.feature_type() == "transcript") &&
         record.source() == "BestRefSeq" &&
         record.seqname().starts_with("NC_") {
         if let Some(gene_name) = record.attributes().get("gene") {
@@ -461,8 +461,10 @@ fn parse_record_mrna_def(record: &gff::Record, gene_targets: Option<&BTreeSet<St
 
             // also check if it's a main transcript
             let is_mane_transcript = record.attributes().get("tag").is_some_and(|tag| tag == "MANE Select");
+            let is_pseudo = record.attributes().get("pseudo").is_some_and(|tag| tag == "true");
 
-            if allowed_gene && is_mane_transcript {
+            // pseudogenes do not seem to have a MANE tag currently
+            if allowed_gene && (is_mane_transcript || is_pseudo) {
                 // allowed and mane
                 if let Some(transcript_id) = record.attributes().get("transcript_id") {
                     match record.strand() {

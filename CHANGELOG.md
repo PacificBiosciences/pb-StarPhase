@@ -1,3 +1,8 @@
+# v1.3.1
+## Changes
+- Adds additional structural variants to the default database construction: CYP2B6\*29, CYP4F2\*16, SLCO1B1\*48, and SLCO1B1\*49
+- Release of new database file with the additional structural variants: `data/v1.3.1/pbstarphase_20250224.json.gz`
+
 # v1.3.0
 ## Changes
 - Adds support for externally called structural variants and corresponding PGx haplotypes
