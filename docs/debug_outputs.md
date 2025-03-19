@@ -52,3 +52,71 @@ Example:
   }
 }
 ```
+
+## HLA alleles
+Filename: `hla_debug.json`
+
+Contains the alignment information for HLA database sequences against the StarPhase consensus sequences.
+This is primarily for users looking to discover new HLA alleles or debug HLA allele assignment in StarPhase.
+
+Fields:
+* `read_mapping_stats` - Contains the mapping for each database sequence against each consensus sequence. All sub-keys of this dictionary are gene names, `{gene}`, with the following fields:
+  * `consensus1` - Statistics for the mapping database sequences against consensus sequence 1
+    * `best_match_id` - The IMGT/HLA database ID of the best matching HLA sequence. When determining the best match, alleles are scored first by the cDNA mapping, and then second by the DNA mapping.
+    * `best_match_star` - The star allele of the best matching HLA sequence
+    * `mapping_stats` - A dictionary of all mapping comparisons between the consensus sequence and the database entries for the `{gene}`. All sub-keys of this dictionary are star alleles, `{star_allele}`, with the following fields:
+      * `cdna_mapping` - The mapping statistics for the database cDNA sequence against the consensus cDNA sequence. The consensus sequences are typically longer than the database sequences to allow for a buffer during mapping.
+        * `query_len` - The length of the database sequence
+        * `target_len` - The length of the consensus sequence
+        * `match_len` - The number of matching bases from the alignment
+        * `nm` - NM tag from minimap2 mapping. This represents the edit distance of the aligned sequence.
+        * `query_unmapped` - The number of bases from the database sequence that were left unmapped. If `nm + query_unmapped == 0`, then the consensus sequence is an **exact match** to the database sequence (see example below).
+        * `target_unmapped` - The number of bases from the consensus sequence that were unused by the mapping
+        * `cigar` - The CIGAR string of the mapping. This is useful for determining where differences between the consensus and database sequences are.
+        * `md` - The MD string of the mapping
+      * `dna_mapping` - The same statistics as `cdna_mapping`, but for the full-length DNA sequence. These may be unavailable if the database entry is missing a DNA sequence.
+  * `consensus2` - Statistics for the mapping database sequences against consensus sequence 2. All sub-fields are identical to those of `consensus1`.
+
+Example:
+```
+{
+  "read_mapping_stats": {
+    "HLA-A": {
+      "consensus1": {
+        "best_match_id": "HLA:HLA00090",
+        "best_match_star": "30:02:01:01",
+        "mapping_stats": {
+          ...
+          "30:02:01:01": {
+            "cdna_mapping": {
+              "query_len": 1098,
+              "target_len": 1535,
+              "match_len": 1098,
+              "nm": 0,
+              "query_unmapped": 0,
+              "target_unmapped": 437,
+              "cigar": "1098=",
+              "md": "1098"
+            },
+            "dna_mapping": {
+              "query_len": 3503,
+              "target_len": 3818,
+              "match_len": 3503,
+              "nm": 0,
+              "query_unmapped": 0,
+              "target_unmapped": 315,
+              "cigar": "3503=",
+              "md": "3503"
+            }
+          },
+          ...
+        }
+      },
+      "consensus2": {
+        ...
+      }
+    },
+    ...
+  }
+}
+```
