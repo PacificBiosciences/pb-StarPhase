@@ -108,10 +108,16 @@ impl<'a> HlaRealigner<'a> {
         // align the read to our database sequence
         let read_bytes = record.seq().as_bytes();
         let read_len = read_bytes.len();
-        let d_mappings = self.db_aligner.map(
-            &read_bytes,
-            output_cigar, output_md, max_frag_len, extra_flags.as_deref(), None
-        )?;
+        let d_mappings = if read_len == 0 {
+            // this can happen when a record has no sequence attached to it
+            warn!("Mapped read found without any sequence, ignoring: {qname}");
+            vec![]
+        } else {
+            self.db_aligner.map(
+                &read_bytes,
+                output_cigar, output_md, max_frag_len, extra_flags.as_deref(), None
+            )?
+        };
 
         // TODO: can we use the shared select_best_mapping function? trick here is we have some cut-offs encoded
         // find the single best mapping for the read

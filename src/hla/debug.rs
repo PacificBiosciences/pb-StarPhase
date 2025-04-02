@@ -8,7 +8,9 @@ use std::collections::btree_map::Entry::{Occupied, Vacant};
 #[derive(Default, Serialize)]
 pub struct HlaDebug {
     /// Each gene & read has a detailed set of mappings
-    read_mapping_stats: BTreeMap<String, BTreeMap<String, ReadMappingStats>>
+    read_mapping_stats: BTreeMap<String, BTreeMap<String, ReadMappingStats>>,
+    /// Each gene has stats on the dual consensus stats
+    dual_passing_stats: Option<BTreeMap<String, DualPassingStats>>
 }
 
 impl HlaDebug {
@@ -19,6 +21,7 @@ impl HlaDebug {
 
     /// Adds a read to the debug collection
     /// # Arguments
+    /// * `gene` - the gene name we are inserting into
     /// * `qname` - the read name to insert
     /// * `stats` - the HLA sequence mapping stats for this read
     /// # Errors
@@ -31,6 +34,27 @@ impl HlaDebug {
             },
             Vacant(entry) => {
                 entry.insert(stats);
+                Ok(())
+            }
+        }
+    }
+
+    /// Adds dual passing stats to the debug collection
+    /// # Arguments
+    /// * `gene` - the gene name we are inserting into
+    /// * `stats` - the stats to add for the gene
+    pub fn add_dual_passing_stats(&mut self, gene: String, stats: DualPassingStats) -> Result<(), Box<dyn std::error::Error>> {
+        if self.dual_passing_stats.is_none() {
+            self.dual_passing_stats = Some(Default::default());
+        }
+
+        let dps = self.dual_passing_stats.as_mut().unwrap();
+        match dps.entry(gene) {
+            Occupied(occupied_entry) => {
+                bail!("Entry {} is already occupied", occupied_entry.key());
+            },
+            Vacant(vacant_entry) => {
+                vacant_entry.insert(stats);
                 Ok(())
             }
         }
@@ -155,5 +179,48 @@ impl DetailedMappingStats {
             cigar,
             md
         }
+    }
+}
+
+#[derive(Default, Serialize)]
+pub struct DualPassingStats {
+    /// If true, indicates that a dual consensus (heterozygous) will get reported
+    is_passing: bool,
+    /// If true, indicates that a dual consensus was found
+    is_dual: bool,
+    /// Counts assigned to consensus 1
+    counts1: Option<usize>,
+    /// Counts assigned to consensus 2
+    counts2: Option<usize>,
+    /// Minor count fraction
+    maf: Option<f64>,
+    /// CDF of the result given the input targets
+    cdf: Option<f64>
+}
+
+impl DualPassingStats {
+    /// Creates stats for a dual consensus result
+    pub fn new_dual(is_passing: bool, counts1: usize, counts2: usize, maf: f64, cdf: f64) -> Self {
+        Self {
+            is_passing,
+            is_dual: true,
+            counts1: Some(counts1),
+            counts2: Some(counts2),
+            maf: Some(maf),
+            cdf: Some(cdf)
+        }
+    }
+
+    /// Creates stats for a non-dual consensus result
+    pub fn new_non_dual() -> Self {
+        Self {
+            is_passing: false,
+            is_dual: false,
+            ..Default::default()
+        }
+    }
+
+    pub fn is_passing(&self) -> bool {
+        self.is_passing
     }
 }
