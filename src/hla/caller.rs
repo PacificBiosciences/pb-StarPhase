@@ -18,7 +18,7 @@ use crate::data_types::coordinates::Coordinates;
 use crate::data_types::database::PgxDatabase;
 use crate::data_types::pgx_diplotypes::{Diplotype, PgxGeneDetails, PgxMappingDetails};
 use crate::hla::alleles::{HlaAlleleDefinition, NORMALIZING_HLA_GENES};
-use crate::hla::debug::{HlaDebug, ReadMappingStats};
+use crate::hla::debug::{DualPassingStats, HlaDebug, ReadMappingStats};
 use crate::hla::mapping::HlaMappingStats;
 use crate::hla::processed_match::HlaProcessedMatch;
 use crate::hla::realigner::{HlaRealigner, RealignmentResult};
@@ -181,7 +181,7 @@ pub fn diplotype_hla(
             let dual_passes = is_passing_dual(&consensus, cli_settings);
             
             // check if we found two using the cDNA
-            let consensus = if dual_passes {
+            let consensus = if dual_passes.is_passing() {
                 // we did, continue on
                 debug!("cDNA dual consensus successful.");
                 consensus
@@ -269,7 +269,7 @@ pub fn diplotype_hla(
             let best_id1 = best_map1.best_match_id().unwrap_or(UNKNOWN_HAP).to_string();
             debug_stats.add_read(gene_name.clone(), "consensus1".to_string(), best_map1)?;
 
-            let best_dual_result = if consensus.is_dual() {
+            let (best_dual_result, dual_passing_stats) = if consensus.is_dual() {
                 // we have a dual consensus, type the second one also
                 let c2_list = consensus_dwfa2.consensus()?;
                 let con2 = std::str::from_utf8(c2_list[0].sequence())?.to_string();
@@ -341,7 +341,7 @@ pub fn diplotype_hla(
                 let counts2 = total_count - counts1;
                 
                 let dual_passed = is_passing_dual(&consensus, cli_settings);
-                if dual_passed {
+                let best_result = if dual_passed.is_passing() {
                     // MAF and CDF likelihood is above cutoff, so assume heterozygous is correct
                     (best_id1.clone(), best_id2)
                 } else {
@@ -352,11 +352,19 @@ pub fn diplotype_hla(
                     } else {
                         (best_id2.clone(), best_id2)
                     }
-                }
+                };
+
+                (best_result, dual_passed)
             } else {
                 debug!("best_map2: No second consensus, homozygous result");
-                (best_id1.clone(), best_id1.clone())
+                (
+                    (best_id1.clone(), best_id1.clone()),
+                    DualPassingStats::new_non_dual()
+                )
             };
+
+            // add the passing stats for tracking
+            debug_stats.add_dual_passing_stats(gene_name.clone(), dual_passing_stats)?;
 
             if let Some(debug_folder) = cli_settings.debug_folder.as_ref() {
                 // save the consensus sequences
@@ -799,7 +807,7 @@ pub fn diplotype_hla_batch(
             let opt_con2: Option<String>;
             let opt_best_map2: Option<ReadMappingStats>;
 
-            let best_dual_result = if consensus.is_dual() {
+            let (best_dual_result, dual_passing_stats) = if consensus.is_dual() {
                 // we have a dual consensus, type the second one also
                 let c2_list = match consensus_dwfa2.consensus() {
                     Ok(l) => l,
@@ -878,7 +886,7 @@ pub fn diplotype_hla_batch(
 
                 // check if the final consensus passes our cutoffs
                 let dual_passed = is_passing_dual(&consensus, cli_settings);
-                if dual_passed {
+                let best_result = if dual_passed.is_passing() {
                     // MAF and CDF likelihood is above cutoff, so assume heterozygous is correct
                     (best_id1.clone(), best_id2)
                 } else {
@@ -889,13 +897,20 @@ pub fn diplotype_hla_batch(
                     } else {
                         (best_id2.clone(), best_id2)
                     }
-                }
+                };
+                (best_result, dual_passed)
             } else {
                 debug!("best_map2: No second consensus, homozygous result");
                 opt_con2 = None;
                 opt_best_map2 = None;
-                (best_id1.clone(), best_id1.clone())
+                (
+                    (best_id1.clone(), best_id1.clone()),
+                    DualPassingStats::new_non_dual()
+                )
             };
+
+            // add the passing stats for tracking
+            debug_stats.add_dual_passing_stats(gene_name.clone(), dual_passing_stats)?;
 
             // check if we have a hemizygous result 
             let best_dual_result = if is_hemizygous {
@@ -1157,7 +1172,8 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
     let hpc_consensus = consensus_list.remove(0);
     debug!("DNA scores1: {:?}", hpc_consensus.scores1());
     debug!("DNA scores2: {:?}", hpc_consensus.scores2());
-    if is_passing_dual(&hpc_consensus, cli_settings) {
+    let dual_passing_stats = is_passing_dual(&hpc_consensus, cli_settings);
+    if dual_passing_stats.is_passing() {
         debug!("HPC consensus passed.");
         /*
         // just for debugging
@@ -1205,7 +1221,7 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
 /// # Arguments
 /// * `dual_consensus` - the consensus to check; if not dual, this will always return false
 /// * `cli_settings` - contains the cutoffs we compare against
-fn is_passing_dual(dual_consensus: &DualConsensus, cli_settings: &DiplotypeSettings) -> bool {
+fn is_passing_dual(dual_consensus: &DualConsensus, cli_settings: &DiplotypeSettings) -> DualPassingStats {
     if dual_consensus.is_dual() {
         // we found a dual consensus, first check if the CDF and MAF are passing
         let maf_cutoff = cli_settings.min_consensus_fraction;
@@ -1223,9 +1239,9 @@ fn is_passing_dual(dual_consensus: &DualConsensus, cli_settings: &DiplotypeSetti
         let cdf_cutoff = cli_settings.min_cdf;
         let is_passing = maf >= maf_cutoff && cdf >= cdf_cutoff;
         debug!("DualConsensus detected: counts1={counts1}, counts2={counts2}, MAF={maf:.5}, CDF={cdf:.5}; is_passing={is_passing}");
-        is_passing
+        DualPassingStats::new_dual(is_passing, counts1, counts2, maf, cdf)
     } else {
-        false
+        DualPassingStats::new_non_dual()
     }
 }
 
@@ -1813,7 +1829,7 @@ mod tests {
             vec![None; total],
             vec![None; total],
         ).unwrap();
-        is_passing_dual(&dual_consensus, &cli_settings)
+        is_passing_dual(&dual_consensus, &cli_settings).is_passing()
     }
 
     #[test]

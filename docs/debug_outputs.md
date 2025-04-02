@@ -76,6 +76,13 @@ Fields:
         * `md` - The MD string of the mapping
       * `dna_mapping` - The same statistics as `cdna_mapping`, but for the full-length DNA sequence. These may be unavailable if the database entry is missing a DNA sequence.
   * `consensus2` - Statistics for the mapping database sequences against consensus sequence 2. All sub-fields are identical to those of `consensus1`.
+* `dual_passing_stats` - Contains the statistics for determining if a diplotype is reported as homozygous or heterozygous. All sub-keys of this dictionary are gene names, `{gene}`, with the following fields:
+  * `is_passing` - if True, then the diplotype is a passing heterozygous call
+  * `is_dual` - if True, then a dual consensus was identified (it may not be passing); if False, the following values will be empty because only a single consensus was identified
+  * `counts1` - the number of reads assigned to consensus 1
+  * `counts2` - the number of reads assigned to consensus 2
+  * `maf` - Minor allele frequency = `min(counts1, counts2) / (counts1 + counts2)`
+  * `cdf` - Cumulative distribution function value for the provided expected MAF
 
 Example:
 ```
@@ -115,6 +122,17 @@ Example:
       "consensus2": {
         ...
       }
+    },
+    ...
+  },
+  "dual_passing_stats": {
+    "HLA-A": {
+      "is_passing": true,
+      "is_dual": true,
+      "counts1": 27,
+      "counts2": 10,
+      "maf": 0.2702702702702703,
+      "cdf": 0.019406414321609413
     },
     ...
   }

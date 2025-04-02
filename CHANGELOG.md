@@ -1,3 +1,10 @@
+# 1.3.2
+## Changes
+- Added statistics on HLA diplotype calling to the `hla_debug.json` file
+
+## Fixed
+- Instead of throwing an error when encountered a mapped read with no sequence in the HLA regions, the tool will now ignore the read and report a warning in the log
+
 # v1.3.1
 ## Changes
 - Adds additional structural variants to the default database construction: CYP2B6\*29, CYP4F2\*16, SLCO1B1\*48, and SLCO1B1\*49
