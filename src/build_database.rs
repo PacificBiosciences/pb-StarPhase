@@ -1,5 +1,6 @@
 
 use bio::io::fasta;
+use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::FxHashMap as HashMap;
@@ -12,6 +13,8 @@ use simple_error::bail;
 use crate::data_types::alleles::{AlleleDefinition, VariantDefinition};
 use crate::data_types::cpic_api_results::CpicAlleleDefinition;
 use crate::data_types::database::PgxDatabase;
+use crate::data_types::db_const::PHARMVAR_IGNORED_GENES;
+use crate::data_types::pharmvar_api_results::{PharmvarGeneDefinition, PharmvarAlleleDefinition};
 use crate::hla::alleles::{HlaAlleleDefinition, SUPPORTED_HLA_GENES};
 
 // CPIC API quickstart: https://github.com/cpicpgx/cpic-data/wiki
@@ -33,24 +36,40 @@ const HLA_CDNA_FASTA: &str = "fasta/hla_nuc.fasta";
 //   from there, you can get this zip file: https://www.pharmvar.org/get-download-file?name={gene}&refSeq=ALL&fileType=zip&version={version}
 //   version can be "current" or numbered like "6.0.8"
 // PharmVar API link: https://www.pharmvar.org/api-service/alleles?exclude-sub-alleles=false&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-sequence=NC_000022.11
-// I do not think we need this though
+const PHARMVAR_API_URL: &str = "https://www.pharmvar.org/api-service";
 
-/// This is the primary call to build out our database locally via CPIC API queries.
+/// This is the primary call to build out our database locally via multiple API queries.
 /// # Arguments
 /// * `reference_genome` - required now for checking the HLA alignments automatically during DB construction
 /// # Errors
 /// * if there are errors retrieving the CPIC gene list
 /// * if there are errors retrieving allele definitions for a gene
-pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
+pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
     // first get all the CPI genes
     info!("Starting CPIC API queries...");
-    let all_genes: HashMap<String, String> = get_all_genes()?;
+    let all_genes: HashMap<String, String> = get_all_cpic_genes()?;
+    info!("\tCPIC gene list: {:?}", all_genes.keys().sorted().collect::<Vec<_>>());
 
     // If testing, you can limit this to a particular gene
     let query_limit = None; //Some("CACNA1S");
 
     // get the alleles for the gene
-    let alleles: Vec<CpicAlleleDefinition> = query_gene_cpic_api(query_limit)?;
+    let cpic_alleles: Vec<CpicAlleleDefinition> = query_gene_cpic_api(query_limit)?;
+    info!("CPIC API queries complete.");
+
+    // now handle the PharmVar genes
+    info!("Starting PharmVar gene queries...");
+    let pharmvar_genes = get_all_pharmvar_genes()?;
+    debug!("\tFull PharmVar gene list: {pharmvar_genes:?}");
+    let filtered_pharmvar_genes: Vec<String> = pharmvar_genes.into_iter()
+        .filter(|g| !all_genes.contains_key(g) && !PHARMVAR_IGNORED_GENES.contains(g.as_str())) // remove anything from CPIC and CYP2D6 (handled separate)
+        .sorted()
+        .collect();
+    info!("\tFiltered PharmVar gene list: {filtered_pharmvar_genes:?}");
+
+    // now get all the PharmVar alleles, which will be missing the all REF alleles
+    let pharmvar_alleles = query_gene_pharmvar_api(&filtered_pharmvar_genes)?;
+    info!("Found {} PharmVar alleles via API.", pharmvar_alleles.len());
 
     // now we need to pull down HLA data as well
     info!("Starting HLA queries...");
@@ -63,9 +82,11 @@ pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     info!("Found latest PharmVar version: {pharmvar_version}");
 
     // now build our database and ship it back
+    // let opt_refseq_fn = Some(std::path::PathBuf::from("./GRCh38_latest_genomic.gff.gz"));
     let full_database: PgxDatabase = PgxDatabase::new(
         &all_genes, 
-        &alleles,
+        &cpic_alleles,
+        &pharmvar_alleles,
         latest_hla_version,
         hla_data,
         pharmvar_version,
@@ -73,6 +94,9 @@ pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxD
         reference_genome,
         None
     )?;
+
+    // todo!("remove query filters and remove opt_refseq_fn");
+
     Ok(full_database)
 }
 
@@ -81,12 +105,12 @@ pub fn pull_database_cpic_api(reference_genome: &ReferenceGenome) -> Result<PgxD
 /// * if the URL request has issues connecting or converting to JSON
 /// * if duplicate gene names are detected while parsing
 /// * if required entries are missing or fail to parse
-fn get_all_genes() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+fn get_all_cpic_genes() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
     // this endpoint gets the list of genes, ordered by symbol, where the URL field is not empty
     //   this tends to correlate with genes that have allele definitions
     //   if we ever find that does not hold, we can remove the url= filter component and just accept extra queries downstream
     let gene_url: String = format!("{CPIC_API_URL}/gene?url=not.eq.null&order=symbol");
-    info!("\tQuerying gene list via {gene_url}");
+    info!("\tQuerying CPIC gene list via {gene_url}");
 
     // hit the end point so we can parse it
     let result: String = reqwest::blocking::get(gene_url)?.text()?;
@@ -346,6 +370,56 @@ pub fn collapse_hla_lookup(dna_data: HashMap<String, (String, String)>, cdna_dat
     Ok(ret)
 }
 
+/// This pulls the list of genes that are available from PharmVar.
+/// # Errors
+/// * if the URL request has issues connecting or converting to JSON
+fn get_all_pharmvar_genes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // this endpoint gets the list of genes, ordered by symbol, where the URL field is not empty
+    //   this tends to correlate with genes that have allele definitions
+    //   if we ever find that does not hold, we can remove the url= filter component and just accept extra queries downstream
+    let gene_url: String = format!("{PHARMVAR_API_URL}/genes/list");
+    info!("\tQuerying PharmVar gene list via {gene_url}");
+
+    // hit the end point so we can parse it
+    let result: String = reqwest::blocking::get(gene_url)?.text()?;
+    debug!("Response received.");
+
+    // now parse it via serde
+    // we are using a generic Value here because we really just need one field right now
+    let parsed: Vec<String> = serde_json::from_str(&result)?;
+    debug!("Parsing complete.");
+
+    Ok(parsed)
+}
+
+/// This will pull all the PharmVar allele definitions for the genes in the list.
+/// # Arguments
+/// * `gene_list` - the list of genes to query
+/// # Errors
+/// * if the URL fails to get
+/// * if the response fails to parse into JSON or our allele definition
+fn query_gene_pharmvar_api(gene_list: &[String]) -> Result<Vec<PharmvarAlleleDefinition>, Box<dyn std::error::Error>> {
+    let mut ret = vec![];
+    for gene in gene_list.iter() {
+        // example URL: https://www.pharmvar.org/api-service/genes/NAT2?exclude-sub-alleles=false&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38
+        // TODO: if we do not specify the gene, it pulls the whole DB in one query; is that better?
+        // TODO: we have exclude-sub-alleles=true, which excludes sub-alleles
+        let definition_url = format!("{PHARMVAR_API_URL}/genes/{gene}?exclude-sub-alleles=true&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38");
+        info!("\tQuerying \"{gene}\" via {definition_url}");
+
+        // hit the end point so we can parse it
+        let result: String = reqwest::blocking::get(definition_url)?.text()?;
+        debug!("Response received.");
+
+        // now parse it via serde
+        let parsed: PharmvarGeneDefinition = serde_json::from_str(&result)?;
+        debug!("Parsing complete.");
+
+        ret.extend(parsed.alleles.iter().cloned());
+    }
+    Ok(ret)
+}
+
 /// Gets a PharmVar zip file from the website and returns a tuple with the version and the PgxGene definition
 /// # Arguments
 /// * `gene` - the gene to retrieve
@@ -533,8 +607,8 @@ mod tests {
     use super::*;
     
     #[test]
-    fn test_get_all_genes() {
-        let all_genes: HashMap<String, String> = get_all_genes().unwrap();
+    fn test_get_all_cpic_genes() {
+        let all_genes: HashMap<String, String> = get_all_cpic_genes().unwrap();
 
         // this list can change, but presumably things will not get removed
         assert!(all_genes.len() >= 24);

@@ -334,3 +334,6 @@ Here is a brief list of some of the current debug outputs:
   * _CYP2D6_ - Contains mapped substrings from the reads that were used to generate CYP2D6 consensus sequences. The haplotype tag (HP) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
   * HLA genes - Contains mapped substrings from the reads that were used to generate HLA consensus sequences. Additionally contains the consensus sequences themselves and corresponding database entry if DNA sequence is available. Extra database haplotypes can be visualized by specifying the `--debug-hla-target` option. The haplotype tag (HP) indicates which consensus the sequence was a part of. Useful for visualizing how the consensus ran and whether there are potential errors.
 * `hla_debug.json` - Contains the summary mapping information of each database entry to the generated HLA consensus sequences. See [debug outputs](./debug_outputs.md#hla-alleles) for more details.
+
+## What is the full list of supported genes and where are the alleles sourced from?
+See the [latest set of genes here](./supported_genes.md).

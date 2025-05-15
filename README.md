@@ -24,6 +24,7 @@ We are still tweaking the input and output file formats and making changes that 
 * [Auxiliary data files](./data)
 
 ## Documentation
+* [Supported genes](docs/supported_genes.md)
 * [Installation instructions](docs/install.md)
 * [User guide with quickstart](docs/user_guide.md)
 * [Output files](docs/user_guide.md#output-files)

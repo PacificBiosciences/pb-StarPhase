@@ -1,4 +1,11 @@
-# 1.3.2
+# v1.4.0
+## Changes
+- Adds in ability to query PharmVar API for additional genes to diplotype
+- Database file has been adjusted slightly to add additional source information (i.e., CPIC v. PharmVar source)
+- Release of new database file with the additional genes: `data/v1.4.0/pbstarphase_20250515.json.gz`
+  - Includes new genes from PharmVar API changes: ["CYP1A2", "CYP2A13", "CYP2C8", "CYP3A4", "NAT2"]
+
+# v1.3.2
 ## Changes
 - Added statistics on HLA diplotype calling to the `hla_debug.json` file
 

@@ -4,5 +4,6 @@ zcat ./GRCh38_latest_genomic.gff.gz | \
     grep -e "#!" -e "genome=chromosome" -e "HLA-A" -e "HLA-B" \
         -e "HLA-DPA1" -e "HLA-DPB1" \
         -e "HLA-DQA1" -e "HLA-DQB1" \
-        -e "HLA-DRB1" -e "HLA-DRB3" -e "HLA-DRB4" -e "HLA-DRB5" | \
+        -e "HLA-DRB1" -e "HLA-DRB3" -e "HLA-DRB4" -e "HLA-DRB5" \
+        -e "NAT2" | \
     gzip > refseq_small.gff.gz
