@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use crate::data_types::pgx_structural_variants::{FullDeletion, PartialDeletion};
 
 // gene names to prevent dev typos
+pub const CYP2A6: &str = "CYP2A6";
 pub const CYP2B6: &str = "CYP2B6";
 pub const CYP2B7P: &str = "CYP2B7P";
 pub const CYP2C18: &str = "CYP2C18";
@@ -105,5 +106,16 @@ lazy_static!{
                 ((gene.to_string(), hap.to_string()), event)
             })
             .collect()
+    };
+
+    /// List of genes that are ignored from PharmVar
+    pub static ref PHARMVAR_IGNORED_LIST: Vec<&'static str> = vec![
+        CYP2A6, // this one has some D6-like behaviors with SVs; lets ignore it for now
+        CYP2D6,
+    ];
+
+    /// Same list, but in set format
+    pub static ref PHARMVAR_IGNORED_GENES: HashSet<&'static str> = {
+        PHARMVAR_IGNORED_LIST.iter().cloned().collect()
     };
 }

@@ -44,7 +44,7 @@ fn run_build(settings: BuildSettings) {
     };
 
     // all the work
-    let pgx_db: PgxDatabase = match pbstarphase::build_database::pull_database_cpic_api(&reference_genome) {
+    let pgx_db: PgxDatabase = match pbstarphase::build_database::build_database_via_api(&reference_genome) {
         Ok(pdb) => pdb,
         Err(e) => {
             error!("Error while building CPIC database: {e}");
