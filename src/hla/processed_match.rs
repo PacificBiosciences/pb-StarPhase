@@ -117,13 +117,22 @@ impl HlaProcessedMatch {
                 let rhs_range = &rhs.processed_ranges[i];
                 let overlap_start = lhs_range.start.max(rhs_range.start);
                 let overlap_end = lhs_range.end.min(rhs_range.end);
-                assert!(overlap_start < overlap_end);
 
-                let lhs_nm = lhs_pc[overlap_end] - lhs_pc[overlap_start];
-                let rhs_nm = rhs_pc[overlap_end] - rhs_pc[overlap_start];
+                // make sure we found an overlap and pull out the differences in the region
+                let (lhs_nm, rhs_nm) = if overlap_start < overlap_end {
+                    (
+                        lhs_pc[overlap_end] - lhs_pc[overlap_start],
+                        rhs_pc[overlap_end] - rhs_pc[overlap_start]
+                    )
+                } else {
+                    // no overlap detected, just mark as 0 and move on to the next check
+                    // this is quite rare, but apparently does happen with some cDNAs
+                    (0, 0)
+                };
 
                 if manual_debug {
                     debug!("DEBUG_MODE");
+                    debug!("iteration: {i}");
                     debug!("lhs: {}", self.haplotype);
                     debug!("rhs: {}", rhs.haplotype);
                     debug!("overlap: {overlap_start}..{overlap_end}");

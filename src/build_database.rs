@@ -659,10 +659,16 @@ mod tests {
 
     #[test]
     fn test_get_pharmvar_sequences() {
-        let fixed_version = "6.0.8";
-        let (version, cyp2d6_db) = get_pharmvar_variants("CYP2D6", fixed_version).unwrap();
-        assert_eq!(&version, fixed_version);
-        assert_eq!(cyp2d6_db.len(), 510); // we got 511 when we did the FASTA based, may need to resolve that in the future
+        let fixed_after_version = semver::VersionReq::parse(">=6.0.8").unwrap();
+        // comparison values below with ">=" are based on this version
+        // apparently, they do not maintain the backwards files forever, so we'll just have to rely on current for testing
+
+        let current = "current";
+        let (version, cyp2d6_db) = get_pharmvar_variants("CYP2D6", current).unwrap();
+
+        let current_version = semver::Version::parse(&version).unwrap();
+        assert!(fixed_after_version.matches(&current_version));
+        assert!(cyp2d6_db.len() >= 510); // we got 511 when we did the FASTA based, may need to resolve that in the future
 
         // make sure we have the entry that is missing a VCF due to no variants
         let first_entry = cyp2d6_db.get("CYP2D6*1.001").unwrap();
