@@ -1,3 +1,7 @@
+# v1.4.1
+## Fixed
+- Fixed a rare panic caused by comparing two HLA consensus mappings with no shared overlaps
+
 # v1.4.0
 ## Changes
 - Adds in ability to query PharmVar API for additional genes to diplotype

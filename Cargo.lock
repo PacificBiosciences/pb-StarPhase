@@ -1344,7 +1344,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pbstarphase"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "assert_approx_eq",
  "bio",
@@ -1366,6 +1366,7 @@ dependencies = [
  "rust-htslib 0.44.1",
  "rust-lib-reference-genome",
  "rustc-hash",
+ "semver 1.0.26",
  "serde",
  "serde_json",
  "simple-error 0.3.1",
@@ -1693,7 +1694,7 @@ version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5f5376ea5e30ce23c03eb77cbe4962b988deead10910c372b226388b594c084"
 dependencies = [
- "semver",
+ "semver 0.1.20",
 ]
 
 [[package]]
@@ -1776,6 +1777,12 @@ name = "semver"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4f410fedcf71af0345d7607d246e7ad15faaadd49d240ee3b24e5dc21a820ac"
+
+[[package]]
+name = "semver"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56e6fa9c48d24d85fb3de5ad847117517440f6beceb7798af16b4a87d616b8d0"
 
 [[package]]
 name = "serde"
