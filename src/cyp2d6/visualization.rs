@@ -94,7 +94,7 @@ pub fn generate_debug_graph(hap_regions: &[Cyp2d6Region], chain_frequency: &BTre
             LineEndKind::None,
             LineEndKind::Arrow,
             LineStyleKind::Normal,
-            &format!("{:.2}", frequency),
+            &format!("{frequency:.2}"),
             &StyleAttr::new(
                 color,
                 inferred_width,

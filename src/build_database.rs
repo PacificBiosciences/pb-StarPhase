@@ -501,7 +501,7 @@ fn get_pharmvar_variants(gene: &str, version: &str) -> Result<(String, BTreeMap<
             let start_index = vcf_content.find("#CHROM").unwrap();
             
             // now put this into a VCF reader for ease of use
-            let variants = load_vcf_from_bytes(vcf_content[start_index..].as_bytes())?;
+            let variants = load_vcf_from_bytes(&vcf_content.as_bytes()[start_index..])?;
             
             // create an allele definition using the full star ID; we do not get the special identifiers with this approach
             let full_star = format!("{gene}*{allele}");

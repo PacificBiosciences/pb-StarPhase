@@ -1,3 +1,9 @@
+# v1.4.2
+## Changes
+- Adds an option to select the sample name if multi-sample VCFs are provided: `--sample-name`
+  - If the sample name is not provided, then the first sample name in the VCF is selected
+  - If a structural variant VCF is also provided, it **must** use the same sample name
+
 # v1.4.1
 ## Fixed
 - Fixed a rare panic caused by comparing two HLA consensus mappings with no shared overlaps

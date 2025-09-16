@@ -167,7 +167,7 @@ impl Diplotype {
         Diplotype {
             hap1: hap1.to_string(),
             hap2: hap2.to_string(),
-            diplotype: format!("{}/{}", hap1, hap2)
+            diplotype: format!("{hap1}/{hap2}")
         }
     }
 

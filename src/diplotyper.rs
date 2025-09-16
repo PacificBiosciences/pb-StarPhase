@@ -20,6 +20,7 @@ use crate::data_types::pgx_diplotypes::{PgxDiplotypes, PgxGeneDetails, PgxVarian
 use crate::data_types::pgx_structural_variants::PgxStructuralVariants;
 use crate::hla::caller::{diplotype_hla_batch, diplotype_hla};
 use crate::util::file_io::load_file_lines;
+use crate::util::htslib_quickparse::get_vcf_samples;
 use crate::visualization::debug_bam_writer::DebugBamWriter;
 use crate::visualization::igv_session_writer::IgvSessionWriter;
 
@@ -54,6 +55,16 @@ pub fn call_diplotypes(
     };
 
     if let Some(vcf_fn) = opt_vcf_fn {
+        // get the sample name, either from the CLI or inferred from the VCF
+        let sample_name = match cli_settings.sample_name.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                let samples = get_vcf_samples(vcf_fn)?;
+                info!("No sample name provided, inferred sample name: \"{}\"", samples[0]);
+                samples[0].clone()
+            }
+        };
+
         for (gene_name, gene_entry) in database.gene_entries().iter() {
             // assume include set has everything UNLESS it is specified
             let included = opt_include_set.as_ref().map(|include_set| include_set.contains(gene_name)).unwrap_or(true);
@@ -96,12 +107,14 @@ pub fn call_diplotypes(
             }
 
             // load the normalize variants from the VCF
-            let mut vcf_variants: BTreeMap<NormalizedVariant, NormalizedGenotype> = load_vcf_variants(vcf_fn, &variant_hash, reference_genome)?;
+            let mut vcf_variants: BTreeMap<NormalizedVariant, NormalizedGenotype> = load_vcf_variants(
+                vcf_fn, &sample_name, &variant_hash, reference_genome
+            )?;
             debug!("Loaded {} normalized genotypes.", vcf_variants.len());
 
             // if we have an SV VCF, load variants for it also
             let sv_vcf_variants: BTreeMap<NormalizedVariant, NormalizedGenotype> = if let Some(sv_vcf) = cli_settings.sv_vcf_filename.as_deref() {
-                load_sv_vcf_variants(sv_vcf, opt_structural_variants, database.gene_collection())?
+                load_sv_vcf_variants(sv_vcf, &sample_name, opt_structural_variants, database.gene_collection())?
             } else {
                 Default::default()
             };
@@ -424,6 +437,7 @@ fn load_database_haplotypes(gene_entry: &PgxGene, reference_genome: Option<&Refe
 /// This will load all the identified variants from a VCF file.
 /// # Arguments
 /// * `vcf_fn` - the path to the VCF file, which must have an index
+/// * `sample_name` - the name of the sample to load variants for
 /// * `variant_hash` - the set of normalized variants we are looking for
 /// * `reference_genome` - the pre-loaded reference genome; if None, some normalization steps will not happen
 /// # Errors
@@ -431,11 +445,14 @@ fn load_database_haplotypes(gene_entry: &PgxGene, reference_genome: Option<&Refe
 /// * if the chromosome for the variants cannot be found in the VCF
 /// # Panics
 /// * if the variant_hash is empty, the chrom.unwrap() will panic
-fn load_vcf_variants(vcf_fn: &Path, variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>, reference_genome: Option<&ReferenceGenome>) 
+fn load_vcf_variants(vcf_fn: &Path, sample_name: &str, variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>, reference_genome: Option<&ReferenceGenome>) 
     -> Result<BTreeMap<NormalizedVariant, NormalizedGenotype>, Box<dyn std::error::Error>> {
     // first we need to open up the vcf and pull out the header
     let mut vcf_reader: bcf::IndexedReader = bcf::IndexedReader::from_path(vcf_fn)?;
     let vcf_header: bcf::header::HeaderView = vcf_reader.header().clone();
+    let samples = get_vcf_samples(vcf_fn)?;
+    let sample_index = samples.iter().position(|s| s == sample_name)
+        .ok_or(SimpleError::new(format!("Sample \"{sample_name}\" not found in {vcf_fn:?}")))?;
 
     // prep our return struct
     let mut ret: BTreeMap<NormalizedVariant, NormalizedGenotype> = Default::default();
@@ -462,9 +479,9 @@ fn load_vcf_variants(vcf_fn: &Path, variant_hash: &BTreeMap<NormalizedVariant, V
                         .collect();
                     let ref_allele = alleles[0];
                     
-                    // TODO: if we want to allow for multi-sample VCFs, we need to adjust this
+                    // get the genotype for the sample, we have the index from above
                     let all_genotypes = record.genotypes()?;
-                    let genotype = all_genotypes.get(0);
+                    let genotype = all_genotypes.get(sample_index);
                     if genotype.len() != 2 {
                         warn!("Error while parsing genotype.len() != 2, ignoring: {} {} {:?} => {:?}", chrom, record.pos(), alleles, genotype);
                         continue;
@@ -613,8 +630,10 @@ fn load_vcf_variants(vcf_fn: &Path, variant_hash: &BTreeMap<NormalizedVariant, V
 /// If one is found, the haplotype is return with a NormalizedGenotype.
 /// # Arguments
 /// * `vcf_fn` - The VCF file to look through
+/// * `sample_name` - the name of the sample to load variants for
 /// * `opt_structural_variants` - Optional structure variants to look for; if None (most PGx genes), this function returns empty results
-fn load_sv_vcf_variants(vcf_fn: &Path, opt_structural_variants: Option<&PgxStructuralVariants>, gene_collection: &GeneCollection) -> Result<BTreeMap<NormalizedVariant, NormalizedGenotype>, Box<dyn std::error::Error>> {
+fn load_sv_vcf_variants(vcf_fn: &Path, sample_name: &str, opt_structural_variants: Option<&PgxStructuralVariants>, gene_collection: &GeneCollection) 
+    -> Result<BTreeMap<NormalizedVariant, NormalizedGenotype>, Box<dyn std::error::Error>> {
     // if there are no SVs noted, then there is nothing to search for here
     let structural_variants = match opt_structural_variants {
         Some(sv) => sv,
@@ -661,6 +680,9 @@ fn load_sv_vcf_variants(vcf_fn: &Path, opt_structural_variants: Option<&PgxStruc
     // we need to open up the vcf and pull out the header
     let mut vcf_reader: bcf::IndexedReader = bcf::IndexedReader::from_path(vcf_fn)?;
     let vcf_header: bcf::header::HeaderView = vcf_reader.header().clone();
+    let samples = get_vcf_samples(vcf_fn)?;
+    let sample_index = samples.iter().position(|s| s == sample_name)
+        .ok_or(SimpleError::new(format!("Sample \"{sample_name}\" not found in {vcf_fn:?}")))?;
 
     // prep our return struct
     let mut ret: BTreeMap<NormalizedVariant, NormalizedGenotype> = Default::default();
@@ -693,7 +715,7 @@ fn load_sv_vcf_variants(vcf_fn: &Path, opt_structural_variants: Option<&PgxStruc
                 let opt_sv_id = is_deletion(gene_collection, structural_variants, start, end)?;
                 if let Some(sv_id) = opt_sv_id {
                     // regardless of full or partial, we found something and need to extract it's info
-                    let opt_genotype = get_sv_genotype(&record)?;
+                    let opt_genotype = get_sv_genotype(&record, sample_index)?;
                     if let Some(gt) = opt_genotype {
                         if gt.genotype() == Genotype::HomozygousReference {
                             // ignore these
@@ -783,10 +805,11 @@ fn get_sv_end(record: &rust_htslib::bcf::Record) -> Result<i32, Box<dyn std::err
 /// This function assumes non-multi-allelic and will return None if a multi-allelic site is provided.
 /// # Arguments
 /// * `record` - the record to parse
-fn get_sv_genotype(record: &rust_htslib::bcf::Record) -> Result<Option<NormalizedGenotype>, Box<dyn std::error::Error>> {
+/// * `sample_index` - the index of the sample to load the genotype for
+fn get_sv_genotype(record: &rust_htslib::bcf::Record, sample_index: usize) -> Result<Option<NormalizedGenotype>, Box<dyn std::error::Error>> {
     // TODO: if we want to allow for multi-sample VCFs, we need to adjust this
     let all_genotypes = record.genotypes()?;
-    let genotype = all_genotypes.get(0);
+    let genotype = all_genotypes.get(sample_index);
     if genotype.len() != 2 {
         warn!("Error while parsing SV record with genotype.len() != 2, ignoring: {} => {:?}", record.desc(), genotype);
         return Ok(None);
@@ -1268,7 +1291,8 @@ mod tests {
 
         // now we need to load from VCF
         let vcf_fn = PathBuf::from("./test_data/CACNA1S/hom.vcf.gz");
-        let vcf_variants = load_vcf_variants(&vcf_fn, &normalized_variants, None).unwrap();
+        let sample_name = get_vcf_samples(&vcf_fn).unwrap()[0].clone();
+        let vcf_variants = load_vcf_variants(&vcf_fn, &sample_name, &normalized_variants, None).unwrap();
 
         // make sure we have this variant as homozygous
         let expected_variant = NormalizedVariant::new("chr1".to_string(), 201060814, "C", "T", None).unwrap();
@@ -1292,7 +1316,8 @@ mod tests {
 
         // now we need test the bad VCF
         let vcf_fn = PathBuf::from("./test_data/CACNA1S/bad_hom_ps.vcf.gz");
-        let result = load_vcf_variants(&vcf_fn, &normalized_variants, None);
+        let sample_name = get_vcf_samples(&vcf_fn).unwrap()[0].clone();
+        let result = load_vcf_variants(&vcf_fn, &sample_name, &normalized_variants, None);
         assert!(result.is_err());
     }
 

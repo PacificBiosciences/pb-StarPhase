@@ -238,7 +238,7 @@ fn process_mm_cigar(cigar: &[(u32, u8)], target_offset: usize, target_len: usize
                 }
             },
             // = - matches, so just copy NM value at this point
-            7 => ret.extend(std::iter::repeat(current_nm).take(length as usize)),
+            7 => ret.extend(std::iter::repeat_n(current_nm, length as usize)),
             // we should not have any of the others
             unexpected => bail!("Unexpected cigar type: {unexpected}")
         };
@@ -258,7 +258,7 @@ fn process_mm_cigar(cigar: &[(u32, u8)], target_offset: usize, target_len: usize
     // the "zero" padding is everything else; extend to fill out whatever remains
     assert!(ret.len() <= target_len+1);
     let zero_padding = missing_values - nm_extension;
-    ret.extend(std::iter::repeat(current_nm).take(zero_padding));
+    ret.extend(std::iter::repeat_n(current_nm, zero_padding));
     Ok(ret)
 }
 

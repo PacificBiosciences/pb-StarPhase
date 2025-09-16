@@ -80,6 +80,12 @@ pub struct DiplotypeSettings {
     #[clap(help_heading = Some("Input/Output"))]
     pub debug_folder: Option<PathBuf>,
 
+    /// Sample name from the input VCFs (default: first sample)
+    #[clap(long = "sample-name")]
+    #[clap(value_name = "STRING")]
+    #[clap(help_heading = Some("Input/Output"))]
+    pub sample_name: Option<String>,
+
     /// Enables scoring by cDNA and tie-breaking with DNA
     #[clap(hide = true)]
     #[clap(long = "disable-cdna-scoring")]
@@ -207,6 +213,11 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
             info!("\tSV VCF: {:?}", sv_fn);
         } else {
             info!("\tSV VCF: None");
+        }
+        if let Some(sample_name) = settings.sample_name.as_ref() {
+            info!("\tSample name: {}", sample_name);
+        } else {
+            info!("\tSample name: inferred");
         }
     } else {
         warn!("\tVCF: No variant call files provided, all variant-based diplotyping is disabled")

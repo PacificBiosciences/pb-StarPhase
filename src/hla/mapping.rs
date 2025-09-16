@@ -92,7 +92,7 @@ impl HlaMappingStats {
             None => "None".to_string()
         };
         format!(
-            "{}, {}", cdna_str, dna_str
+            "{cdna_str}, {dna_str}"
         )
     }
 
