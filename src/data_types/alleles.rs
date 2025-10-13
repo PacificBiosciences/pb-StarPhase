@@ -61,7 +61,7 @@ impl AlleleDefinition {
 }
 
 /// This corresponds to an individual variant or sequence replacement that is part of an allele definition
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct VariantDefinition {
     /// an external identifier for this variant
     id: Option<String>,

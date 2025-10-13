@@ -19,10 +19,11 @@ use crate::hla::alleles::{HlaAlleleDefinition, HlaConfig, SUPPORTED_HLA_GENES};
 use super::pgx_structural_variants::PartialDeletion;
 use super::pharmvar_api_results::PharmvarAlleleDefinition;
 
-#[derive(Clone, Copy, Deserialize, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Debug, Default, Eq, PartialEq, Serialize, strum_macros::Display)]
 pub enum PgxDataSource {
     #[default]
     Unknown,
+    #[strum(to_string="CPIC")]
     Cpic,
     PharmVar
 }
@@ -99,10 +100,17 @@ impl PgxDatabase {
                 continue;
             }
 
-            // add it now
-            let gene_entry: &mut PgxGene = gene_entries.get_mut(gene)
-                .ok_or(format!("An allele definition was provided for {gene}, but it was not found in the gene to chromosome list."))?;
-            gene_entry.add_cpic_allele(allele_def)?;
+            match gene_entries.get_mut(gene) {
+                Some(gene_entry) => {
+                    // add it now
+                    gene_entry.add_cpic_allele(allele_def)?;
+                },
+                None => {
+                    // at some point CPIC added NAT2 to the alleles, but not the genes list
+                    // we've specifically ignored NAT2 from CPIC, but this handles the general case for other genes
+                    warn!("An allele definition was provided for {gene}, but it was not found in the gene to chromosome list.");
+                }
+            };
         }
 
         // go through all the default SV events and add them
@@ -277,15 +285,15 @@ impl PgxDatabase {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct PgxMetadata {
     /// The version of pbstarphase we're running
-    pbstarphase_version: String,
+    pub pbstarphase_version: String,
     /// The version of the CPIC database
-    cpic_version: String,
+    pub cpic_version: String,
     /// The version of the HLA database
-    hla_version: String,
+    pub hla_version: String,
     /// The version of the PharmVar database
-    pharmvar_version: String,
+    pub pharmvar_version: String,
     /// The time the database was constructed
-    build_time: chrono::DateTime<chrono::Utc>
+    pub build_time: chrono::DateTime<chrono::Utc>
 }
 
 /// A PGx gene has defined variants as well as alleles that are composites of the defined variants.
@@ -419,12 +427,12 @@ impl PgxGene {
                     } else {
                         vec![None, Some(variant_sequence.to_string())]
                     };
-                    let new_variant = PgxVariant {
-                        name: variant_name,
+                    let new_variant = PgxVariant::new(
+                        variant_name,
                         dbsnp_id,
                         position,
-                        alleles: var_alleles
-                    };
+                        var_alleles
+                    );
 
                     // store it and update our alleles
                     entry.insert(new_variant);
@@ -485,7 +493,10 @@ impl PgxGene {
 
         // okay, now we can check the variants and add them as necessary
         for ad_variant in allele_definition.variants.iter() {
-            let variant_name = ad_variant.variant_id.clone();
+            // use the RS ID if available, otherwise use the HGVS nomenclature
+            let variant_name = ad_variant.rs_id.clone().unwrap_or(
+                ad_variant.hgvs.clone()
+            );
             let dbsnp_id = ad_variant.rs_id.clone();
             let variant_id: u64 = ad_variant.variant_id.parse()?;
 
@@ -530,12 +541,12 @@ impl PgxGene {
                     let var_alleles = vec![
                         Some(ref_seq), Some(alt_seq.clone())
                     ];
-                    let new_variant = PgxVariant {
-                        name: variant_name,
+                    let new_variant = PgxVariant::new(
+                        variant_name,
                         dbsnp_id,
                         position,
-                        alleles: var_alleles
-                    };
+                        var_alleles
+                    );
 
                     // store it and update our alleles
                     entry.insert(new_variant);
@@ -613,6 +624,10 @@ impl PgxGene {
 
     pub fn gene_name(&self) -> &str {
         &self.gene_name
+    }
+
+    pub fn data_source(&self) -> PgxDataSource {
+        self.data_source
     }
 
     pub fn chromosome(&self) -> &str {

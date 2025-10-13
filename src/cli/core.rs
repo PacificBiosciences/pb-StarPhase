@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::cli::diplotype::DiplotypeSettings;
 use crate::cli::db_build::BuildSettings;
+use crate::cli::db_stat::DbStatSettings;
 
 lazy_static! {
     /// Stores the full version string we plan to use, which is generated in build.rs
@@ -46,10 +47,12 @@ pub struct Cli {
 /// Select a subcommand to see more usage information:
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Download and build the database from CPIC
+    /// Download and build the database for StarPhase
     Build(Box<BuildSettings>),
+    /// Generate statistics about a database file
+    DbStat(Box<DbStatSettings>),
     /// Run the diplotyper on a dataset
-    Diplotype(Box<DiplotypeSettings>)
+    Diplotype(Box<DiplotypeSettings>),
 }
 
 pub fn get_cli() -> Cli {

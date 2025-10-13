@@ -7,6 +7,8 @@ pub mod cli;
 pub mod cyp2d6;
 /// Contains any specialized data types that are shared across the tooling
 pub mod data_types;
+/// Contains functionality for displaying database statistics
+pub mod db_stat;
 /// Contains the functionality for diplotyping a gene
 pub mod diplotyper;
 /// Contains the specialized functionality for HLA genes

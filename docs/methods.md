@@ -1,4 +1,10 @@
 # Methods
+We recommend reviewing the StarPhase manuscript for a comprehensive overview of StarPhase methods:
+
+[Holt, J. M. et al. (2024). StarPhase: Comprehensive Phase-Aware Pharmacogenomic Diplotyper for Long-Read Sequencing Data. _bioRxiv_, 2024-12.](https://doi.org/10.1101/2024.12.10.627527)
+
+The following sections provide a brief summary of the methods.
+
 ## CPIC genes
 pb-StarPhase uses a relatively simple process to convert a VCF file into star-allele calls.
 The high-level process is outlined below:

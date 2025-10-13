@@ -28,6 +28,7 @@ We are still tweaking the input and output file formats and making changes that 
 * [Installation instructions](docs/install.md)
 * [User guide with quickstart](docs/user_guide.md)
 * [Output files](docs/user_guide.md#output-files)
+* [Database information](docs/database.md)
 * [Methods](docs/methods.md)
 * [Performance](docs/performance.md)
 

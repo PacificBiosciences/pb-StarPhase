@@ -8,6 +8,7 @@ use std::path::Path;
 use pbstarphase::cli::diplotype::{DiplotypeSettings, check_diplotype_settings};
 use pbstarphase::cli::core::{Commands, get_cli};
 use pbstarphase::cli::db_build::{BuildSettings, check_build_settings};
+use pbstarphase::cli::db_stat::{DbStatSettings, check_db_stat_settings};
 use pbstarphase::data_types::database::PgxDatabase;
 use pbstarphase::data_types::pgx_diplotypes::{PgxDiplotypes, Diplotype};
 use pbstarphase::util::file_io::{load_json, save_json};
@@ -47,7 +48,7 @@ fn run_build(settings: BuildSettings) {
     let pgx_db: PgxDatabase = match pbstarphase::build_database::build_database_via_api(&reference_genome) {
         Ok(pdb) => pdb,
         Err(e) => {
-            error!("Error while building CPIC database: {e}");
+            error!("Error while building StarPhase database: {e}");
             std::process::exit(exitcode::IOERR);
         }
     };
@@ -218,6 +219,47 @@ fn save_pharmcat_tsv(diplotypes: &PgxDiplotypes, filename: &Path) -> Result<(), 
     Ok(())
 }
 
+/// This will run the "db_stat" mode of the tool
+/// # Arguments
+/// * `settings` - the DbStatSettings object
+fn run_db_stat(settings: DbStatSettings) {
+    // get the settings
+    let filter_level: LevelFilter = match settings.verbosity {
+        0 => LevelFilter::Info,
+        1 => LevelFilter::Debug,
+        _ => LevelFilter::Trace
+    };
+
+    // immediately setup logging first
+    env_logger::builder()
+        .format_timestamp_millis()
+        .filter_level(filter_level)
+        .init();
+
+    // okay, now we can check all the other settings
+    let cli_settings: DbStatSettings = check_db_stat_settings(settings);
+
+    // first load the database
+    info!("Loading PGx database from {:?}...", cli_settings.input_database);
+    let database: PgxDatabase = match load_json(&cli_settings.input_database) {
+        Ok(db) => db,
+        Err(e) => {
+            error!("Error while loading PGx database file: {e}");
+            std::process::exit(exitcode::IOERR);
+        }
+    };
+
+    // we also need to validate that the database is complete enough to run
+    if let Err(e) = database.validate() {
+        error!("Error while validating PGx database file: {e}");
+        std::process::exit(exitcode::IOERR);
+    }
+    info!("Database loaded successfully.");
+
+    // display the database statistics
+    pbstarphase::db_stat::print_stats(&database);
+}
+
 fn main() {
     let cli = get_cli();
     match cli.command {
@@ -226,6 +268,9 @@ fn main() {
         },
         Commands::Diplotype(settings) => {
             run_diplotype(*settings);
+        },
+        Commands::DbStat(settings) => {
+            run_db_stat(*settings);
         }
     }
 

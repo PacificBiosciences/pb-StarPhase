@@ -60,7 +60,7 @@ pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     // now handle the PharmVar genes
     info!("Starting PharmVar gene queries...");
     let pharmvar_genes = get_all_pharmvar_genes()?;
-    debug!("\tFull PharmVar gene list: {pharmvar_genes:?}");
+    info!("\tFull PharmVar gene list: {pharmvar_genes:?}");
     let filtered_pharmvar_genes: Vec<String> = pharmvar_genes.into_iter()
         .filter(|g| !all_genes.contains_key(g) && !PHARMVAR_IGNORED_GENES.contains(g.as_str())) // remove anything from CPIC and CYP2D6 (handled separate)
         .sorted()

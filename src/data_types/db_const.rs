@@ -16,13 +16,15 @@ pub const CYP4F2: &str = "CYP4F2";
 pub const HELLS: &str = "HELLS";
 pub const HLA_A: &str = "HLA-A";
 pub const HLA_B: &str = "HLA-B";
+pub const NAT2: &str = "NAT2";
 pub const SLCO1B1: &str = "SLCO1B1";
 pub const TBC1D12: &str = "TBC1D12";
 
 lazy_static!{
     /// List of genes that are ignored from CPIC
     pub static ref CPIC_IGNORED_LIST: Vec<&'static str> = vec![
-        CYP2D6, HLA_A, HLA_B
+        CYP2D6, HLA_A, HLA_B, // handled on separate path
+        NAT2 // added to CPIC, but not the genes list; we want to use PharmVar here
     ];
 
     /// Same list, but in set format

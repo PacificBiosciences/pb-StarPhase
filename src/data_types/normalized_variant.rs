@@ -175,9 +175,16 @@ impl NormalizedVariant {
         // do any conversions
         let multi_alt = match alt_allele {
             // IUPAC code: https://www.bioinformatics.org/sms/iupac.html
+            "K" => vec!["G", "T"],
             "M" => vec!["A", "C"],
             "R" => vec!["A", "G"],
+            "S" => vec!["C", "G"],
+            "W" => vec!["A", "T"],
             "Y" => vec!["C", "T"],
+            "B" => vec!["C", "G", "T"],
+            "D" => vec!["A", "G", "T"],
+            "H" => vec!["A", "C", "T"],
+            "V" => vec!["A", "C", "G"],
             // there is one allele with this pattern: "delinsCC; delinsCCC; delinsCCCC; delinsCCCCC; delinsCCCCCC; delinsCCCCCCC"
             _ => alt_allele.split("; ").collect()
         };
@@ -241,6 +248,10 @@ impl NormalizedVariant {
 
     pub fn sv_stats(&self) -> Option<&StructuralVariantStats> {
         self.sv_stats.as_ref()
+    }
+
+    pub fn variant_name(&self) -> String {
+        format!("{}:{}{}>{}", self.chrom, self.position, self.reference, self.alternate)
     }
 }
 
@@ -373,6 +384,8 @@ impl NormalizedGenotype {
 pub struct NormalizedPgxHaplotype {
     // the name of this haplotype
     haplotype_name: String,
+    /// if true, this is an SV haplotype
+    is_sv: bool,
     // variants defining the haplotype - the outer Vec is AND, the inner Vec is OR; None indicates that it doesn't have to match this
     variants: Vec<Vec<Option<NormalizedVariant>>>
 }
@@ -382,6 +395,7 @@ impl NormalizedPgxHaplotype {
     pub fn new(haplotype_name: String) -> NormalizedPgxHaplotype {
         NormalizedPgxHaplotype {
             haplotype_name,
+            is_sv: false,
             variants: vec![]
         }
     }
@@ -390,6 +404,12 @@ impl NormalizedPgxHaplotype {
     /// # Arguments
     /// * `variant` - a Vec of normalized variants, any of them would be considered a match for this variant
     pub fn add_variant(&mut self, variant: Vec<Option<NormalizedVariant>>) {
+        // flatten will skip any None values
+        for nv in variant.iter().flatten() {
+            if nv.is_sv() {
+                self.is_sv = true;
+            }
+        }
         self.variants.push(variant);
     }
 
@@ -434,8 +454,62 @@ impl NormalizedPgxHaplotype {
             })
     }
 
+    /// Quantifies the match between this haplotype and a list of other variants.
+    /// Returns a tuple of (missing_variants, extra_variants)
+    ///     missing_variants - the variants that are in this haplotype but not in the other list
+    ///     extra_variants - the variants that are in the other list, but not in this haplotype
+    /// # Arguments
+    /// * `other_variants` - the list of other variants we want to match
+    pub fn quant_match(&self, other_variants: &[NormalizedVariant]) -> (Vec<NormalizedVariant>, Vec<NormalizedVariant>) {
+        // make sure this is not an SV haplotype
+        assert!(!self.is_sv, "SV haplotypes should not be quantified");
+        
+        let mut missing_variants = vec![];
+        let mut extra_variants = vec![];
+        // initialize that all variants are unmatched so far
+        let mut match_vec: Vec<bool> = vec![false; self.variants.len()];
+        for ov in other_variants.iter() {
+            // find the first variant that matches this one
+            // if we ever get multiple matches, this logic will need to change
+            let match_index = self.variants.iter()
+                .position(|v| {
+                    v.iter().any(|sub_v| sub_v.as_ref() == Some(ov))
+                });
+            match match_index {
+                Some(mi) => {
+                    if match_vec[mi] {
+                        // something has already matched this loci, we cannot double match
+                        extra_variants.push(ov.clone());
+                    } else {
+                        // mark this one as matched
+                        match_vec[mi] = true;
+                    }
+                },
+                None => {
+                    // there is no match for this allele
+                    extra_variants.push(ov.clone());
+                }
+            }
+        }
+
+        // all the other_variants had a match, make sure everything in this haplotype also had a match
+        for (matched, variant) in match_vec.into_iter().zip(self.variants.iter()) {
+            if !(matched || variant.contains(&None)) {
+                // get the first variant that is not None
+                let first_variant = variant.iter().find(|v| v.is_some())
+                    .unwrap().clone().unwrap();
+                missing_variants.push(first_variant);
+            }
+        }
+        (missing_variants, extra_variants)
+    }
+
     pub fn haplotype_name(&self) -> &str {
         &self.haplotype_name
+    }
+
+    pub fn is_sv(&self) -> bool {
+        self.is_sv
     }
 
     pub fn variants(&self) -> &[Vec<Option<NormalizedVariant>>] {
@@ -842,8 +916,14 @@ mod tests {
         let test_variant = NormalizedVariant::new("chr1".to_string(), 10, "A", "C", None).unwrap();
         assert!(pgx_hap.matches(&[]));
         assert!(!pgx_hap.matches(&[
-            test_variant
+            test_variant.clone()
         ]));
+
+        // now do a quant test
+        assert_eq!(pgx_hap.quant_match(&[]), (vec![], vec![]));
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant.clone()
+        ]), (vec![], vec![test_variant]));
     }
 
     /// test a simple single-variant haplotype match
@@ -855,8 +935,14 @@ mod tests {
         pgx_hap.add_variant(vec![Some(test_variant.clone())]);
         assert!(!pgx_hap.matches(&[]));
         assert!(pgx_hap.matches(&[
-            test_variant
+            test_variant.clone()
         ]));
+
+        // now do a quant test
+        assert_eq!(pgx_hap.quant_match(&[]), (vec![test_variant.clone()], vec![]));
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant.clone()
+        ]), (vec![], vec![]));
     }
 
     /// tests that optional matches work both with and without the optional variant
@@ -868,8 +954,14 @@ mod tests {
         pgx_hap.add_variant(vec![None, Some(test_variant.clone())]);
         assert!(pgx_hap.matches(&[]));
         assert!(pgx_hap.matches(&[
-            test_variant
+            test_variant.clone()
         ]));
+
+        // now do a quant test - here, presence and absence should both be empty since the variant is optional
+        assert_eq!(pgx_hap.quant_match(&[]), (vec![], vec![]));
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant.clone()
+        ]), (vec![], vec![]));
     }
 
     /// tests a multi-variant list, make sure that each individually will match, but both together should not
@@ -889,8 +981,21 @@ mod tests {
             test_variant_form2.clone()
         ]));
         assert!(!pgx_hap.matches(&[
-            test_variant_form1,
-            test_variant_form2
+            test_variant_form1.clone(),
+            test_variant_form2.clone()
         ]));
+
+        // now do a quant test
+        assert_eq!(pgx_hap.quant_match(&[]), (vec![test_variant_form1.clone()], vec![])); // only the first is marked as missing
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant_form1.clone()
+        ]), (vec![], vec![]));
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant_form2.clone()
+        ]), (vec![], vec![]));
+        assert_eq!(pgx_hap.quant_match(&[
+            test_variant_form1.clone(),
+            test_variant_form2.clone()
+        ]), (vec![], vec![test_variant_form2.clone()]));
     }
 }
