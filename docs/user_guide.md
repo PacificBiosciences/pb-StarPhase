@@ -128,13 +128,15 @@ Fields are described below, with a partial example further down:
   * `hla_version` - A tag indicating the IMGTHLA version; these are identical to GitHub tags on [https://github.com/ANHIG/IMGTHLA](https://github.com/ANHIG/IMGTHLA).
   * `build_time` - The time this database was built; in UTC format.
 * `gene_details` - The core output; each gene will have a key in this dictionary with the following information:
-  * `diplotypes` - A list of all exact matching diplotype combinations; ambiguous combinations (i.e., lack of phase information) may lead to more than one possible diplotype combination.
+  * `diplotypes` - A list of all matching diplotype combinations; ambiguous combinations (i.e., lack of phase information) may lead to more than one possible diplotype combination. For variant-based genes, this is always exact-matching combinations. For sequence-based genes, this will have the closest matching combinations.
     * `hap1` - Name of the first haplotype in the diplotype.
     * `hap2` - Name of the second haplotype in the diplotype.
     * `diplotype` - Name of the combined diplotype; `{hap1}/{hap2}`.
+  * `simple_diplotypes` - This has the same fields as `diplotypes`, but the alleles have been reduced to simple core allele forms. For example, `*4.002` becomes `*4`.
+  * `inexact_diplotypes` - For variant-based genes (most of them in StarPhase), this will only be populated if no exact-matching diplotypes were identifed (e.g., `diplotypes` will have `NO_MATCH`). In that case, the closest inexact matches will be included in this output. For HLA genes, this is currently always `None`. For CYP2D6, this will report the closest match and any variant differences between the observed sequence and the closest match. The format is `{closest_match} +{extra_variant} -{missing_variant} ?{ambiguous_variant}`. For example, `(0_CYP2D6*4.001 +rs28735595)` indicates an allele that best matches `*4.001` but contains the unexpected variant `rs28735595`.
   * `variant_details` - Contains the list of all identified variants from the VCF file that match a variant definition. Will be `null` for HLA genes.
-    * `cpic_variant_id` - The CPIC assigned variant identifier (unsigned integer).
-    * `cpic_name` - The CPIC assigned name for this variant; this is typically a human-readable identifier that has been historically used in pharmacogenomic literature.
+    * `variant_id` - The assigned variant identifier (unsigned integer) from the upstream database.
+    * `variant_name` - The assigned name for this variant; this is typically a human-readable identifier that has been historically used in pharmacogenomic literature. CPIC has names as part of the API. For PharmVar, we use the RS ID when available, and the variant ID otherwise.
     * `dbsnp` - A DBSNP identifier, if available.
     * `normalized_variant` - Describes the identified variant after variant normalization; this will almost always match VCF specification for describing a variant (left-shifted, no redundant bases); this may not match the exact CPIC definition due to oddities in how CPIC describes alleles.
       * `chrom` - The chromosome from the reference.
@@ -181,10 +183,12 @@ Partial example:
           "diplotype": "*5/*4"
         }
       ],
+      "simple_diplotypes": null,
+      "inexact_diplotypes": null,
       "variant_details": [
         {
-          "cpic_variant_id": 778236,
-          "cpic_name": "34T>G",
+          "variant_id": 778236,
+          "variant_name": "34T>G",
           "dbsnp": "rs3093105",
           "normalized_variant": {
             "chrom": "chr19",
@@ -204,9 +208,23 @@ Partial example:
     "CYP2D6": {
       "diplotypes": [
         {
-          "hap1": "*4.001+*68",
+          "hap1": "*68+*4.001",
           "hap2": "*4.001",
-          "diplotype": "*4.001+*68/*4.001"
+          "diplotype": "*68+*4.001/*4.001"
+        }
+      ],
+      "simple_diplotypes": [
+        {
+          "hap1": "*68+*4",
+          "hap2": "*4"
+          "diplotype": "*68+*4/*4"
+        }
+      ],
+      "inexact_diplotypes": [
+        {
+          "hap1": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)",
+          "hap2": "(0_CYP2D6*4.001 +rs28735595)",
+          "diplotype": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)/(0_CYP2D6*4.001 +rs28735595)"
         }
       ],
       "variant_details": null,
@@ -277,16 +295,7 @@ MT-RNR1	Reference
 
 # FAQ
 ## How do I update the database for pb-StarPhase?
-A new database can be generated automatically using the available data with the following command:
-
-```bash
-pbstarphase build \
-  --output-json {path_to_new_database}.json
-```
-
-This requires an internet connection that can query the CPIC API and IMGTHLA GitHub for the latest genes, allele definitions, and variants.
-Additionally, this relies on upstream databases maintaining a known structure.
-If that structure changes, this command may fail and require an update to the software to resolve it.
+See our [Database guide](./database.md#building-the-database).
 
 ## Why are some of the haplotypes ignored?
 Some CPIC genes, like _G6PD_, include reference variants that are alternate sequences relative to the GRCh38 reference genome.

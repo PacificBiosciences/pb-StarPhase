@@ -1,3 +1,25 @@
+# v1.5.0
+## Changes
+- Adds a new field to the output json, `inexact_diplotypes`. This field is intended to capture information about inexact allele matches. The behavior of this output depends on the gene:
+  - For small variant-based genes, this field is only populated if no exact matching diplotypes are found. In that case, the closest matches will be reported in this field, example:
+    - DPYD diplotype: `NO_MATCH/NO_MATCH`
+    - DPYD inexact diplotype: `(c.1627A>G (*5) +c.85T>C)/c.85T>C (*9A)`
+  - For HLA genes, this is currently always empty.
+  - For CYP2D6, this is a copy of the "deeplotypes" that were previously reported in the debug output, example:
+    - CYP2D6 diplotype: `*68+*4.001/*4.001`
+    - CYP2D6 inexact diplotype: `(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)/(0_CYP2D6*4.001 +rs28735595)`
+- Adds a new sub-command: `db-stat`. This command will provide high-level summary statistics about a StarPhase database file such as gene counts, allele counts, variant counts, and per-gene statistics for the genes within the file.
+- **Breaking output changes:**
+  - The output JSON fields `cpic_variant_id` and `cpic_name` have been renamed to `variant_id` and `variant_name` to reflect that these variants are not always from CPIC.
+  - The `variant_name` field for variants from PharmVar was previously the variant ID, which is challenging to interpret. The default is now the RS ID if available, and falling back to the HGVS entry otherwise.
+- Released a new version of the database: `data/v1.5.0/pbstarphase_20251002.json.gz`
+  - The output from `db-stat` is also included with this release: `data/v1.5.0/pbstarphase_20251002.db_stat.txt`
+
+## Fixed
+- Updated the database build command to gracefully ignore any allele entries for genes that were not part of the initial CPIC query. This was caused by the addition of NAT2 to part of the CPIC API.
+- Specifically added NAT2 to the ignore list for CPIC, this is currently getting pulled from PharmVar
+- Fixed an issue where only some IUPAC codes were supported
+
 # v1.4.2
 ## Changes
 - Adds an option to select the sample name if multi-sample VCFs are provided: `--sample-name`

@@ -57,6 +57,8 @@ pub struct PgxGeneDetails {
     diplotypes: Vec<Diplotype>,
     /// Contains an optional list of simplified diplotypes
     simple_diplotypes: Option<Vec<Diplotype>>,
+    /// Contains the list of inexact matching diplotypes; only used if diplotypes is empty and for the non-mapping-based genes
+    inexact_diplotypes: Option<Vec<Diplotype>>,
     /// Contains the list of identified variants
     variant_details: Option<Vec<PgxVariantDetails>>,
     /// Contains the list of alignments analyzed
@@ -76,13 +78,38 @@ impl PgxGeneDetails {
         Ok(PgxGeneDetails { 
             diplotypes,
             simple_diplotypes,
+            inexact_diplotypes: None,
             variant_details: Some(variant_details),
             mapping_details: None,
             multi_mapping_details: None
         })
     }
 
-    /// This is the one for HLA (currently, it will probably change to multi-mapping when we synchronize the approaches)
+    /// Constructor for when we have inexact matching diplotypes
+    /// # Arguments
+    /// * `inexact_diplotypes` - the list of inexact matching diplotypes
+    /// * `variant_details` - the list of variant details
+    pub fn new_inexact_diplotypes(inexact_diplotypes: Vec<Diplotype>, variant_details: Vec<PgxVariantDetails>) -> Result<PgxGeneDetails, Box<dyn std::error::Error>> {
+        // no exact matches, so we just use a NO_MATCH diplotype
+        let diplotypes = vec![
+            Diplotype::new("NO_MATCH", "NO_MATCH")
+        ];
+
+        Ok(PgxGeneDetails {
+            diplotypes,
+            simple_diplotypes: None,
+            inexact_diplotypes: Some(inexact_diplotypes),
+            variant_details: Some(variant_details),
+            mapping_details: None,
+            multi_mapping_details: None
+        })
+    }
+
+    /// This is the one for HLA (currently, it will probably change to multi-mapping when we synchronize the approaches).
+    /// # Arguments
+    /// * `diplotypes` - the list of exact matching diplotypes
+    /// * `simple_diplotypes` - the list of simple diplotypes, which is always None for HLA currently
+    /// * `mapping_details` - the list of mapping details
     pub fn new_from_mappings(diplotypes: Vec<Diplotype>, simple_diplotypes: Option<Vec<Diplotype>>, mapping_details: Vec<PgxMappingDetails>) -> Result<PgxGeneDetails, Box<dyn std::error::Error>> {
         if let Some(sd) = simple_diplotypes.as_ref() {
             if diplotypes.len() != sd.len() {
@@ -92,14 +119,25 @@ impl PgxGeneDetails {
         Ok(PgxGeneDetails { 
             diplotypes,
             simple_diplotypes,
+            inexact_diplotypes: None,
             variant_details: None,
             mapping_details: Some(mapping_details),
             multi_mapping_details: None
         })
     }
 
-    /// This is the one for CYP2D6
-    pub fn new_from_multi_mappings(diplotypes: Vec<Diplotype>, simple_diplotypes: Option<Vec<Diplotype>>, multi_mapping_details: Vec<PgxMultiMappingDetails>) -> Result<PgxGeneDetails, Box<dyn std::error::Error>> {
+    /// This is the one for CYP2D6. Here, we expect all of the diplotype formats to be present.
+    /// # Arguments
+    /// * `diplotypes` - the list of exact matching diplotypes
+    /// * `simple_diplotypes` - the list of simple diplotypes
+    /// * `inexact_diplotypes` - the list of inexact matching diplotypes
+    /// * `multi_mapping_details` - the list of multi-mapping details
+    pub fn new_from_multi_mappings(
+        diplotypes: Vec<Diplotype>,
+        simple_diplotypes: Option<Vec<Diplotype>>,
+        inexact_diplotypes: Option<Vec<Diplotype>>,
+        multi_mapping_details: Vec<PgxMultiMappingDetails>
+    ) -> Result<PgxGeneDetails, Box<dyn std::error::Error>> {
         if let Some(sd) = simple_diplotypes.as_ref() {
             if diplotypes.len() != sd.len() {
                 bail!("diplotypes and simple_diplotypes must be the same length");
@@ -108,6 +146,7 @@ impl PgxGeneDetails {
         Ok(PgxGeneDetails { 
             diplotypes,
             simple_diplotypes,
+            inexact_diplotypes,
             variant_details: None,
             mapping_details: None,
             multi_mapping_details: Some(multi_mapping_details)
@@ -123,6 +162,7 @@ impl PgxGeneDetails {
         PgxGeneDetails {
             diplotypes,
             simple_diplotypes: None,
+            inexact_diplotypes: None,
             variant_details: None,
             mapping_details: None,
             multi_mapping_details: None
@@ -139,6 +179,10 @@ impl PgxGeneDetails {
         } else {
             self.diplotypes()
         }
+    }
+
+    pub fn inexact_diplotypes(&self) -> Option<&[Diplotype]> {
+        self.inexact_diplotypes.as_deref()
     }
 
     pub fn variant_details(&self) -> Option<&[PgxVariantDetails]> {
@@ -212,10 +256,10 @@ impl PartialEq for Diplotype {
 /// Contains all the details for a variant that was identified through our process
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PgxVariantDetails {
-    /// CPIC assigned variant ID
-    cpic_variant_id: u64,
-    /// CPIC assigned name
-    cpic_name: String,
+    /// Assigned variant ID
+    variant_id: u64,
+    /// Assigned name - CPIC has names, but PharmVar we use RS IDs and default to variant ID if not available
+    variant_name: String,
     /// DBSNP id when available
     dbsnp: Option<String>,
     /// The normalized variant we loaded
@@ -225,10 +269,10 @@ pub struct PgxVariantDetails {
 }
 
 impl PgxVariantDetails {
-    pub fn new(cpic_variant_id: u64, cpic_name: String, dbsnp: Option<String>, normalized_variant: NormalizedVariant, normalized_genotype: NormalizedGenotype) -> PgxVariantDetails {
+    pub fn new(variant_id: u64, variant_name: String, dbsnp: Option<String>, normalized_variant: NormalizedVariant, normalized_genotype: NormalizedGenotype) -> PgxVariantDetails {
         PgxVariantDetails { 
-            cpic_variant_id,
-            cpic_name,
+            variant_id,
+            variant_name,
             dbsnp, 
             normalized_variant, 
             normalized_genotype
@@ -352,5 +396,50 @@ mod tests {
 
         let diplotype = Diplotype::new("*4 + *68", "*1");
         assert_eq!(diplotype.pharmcat_diplotype(), "[*4 + *68]/*1");
+    }
+
+    #[test]
+    fn test_new_inexact_diplotypes() {
+        // Create some test diplotypes for inexact matching
+        let inexact_diplotypes = vec![
+            Diplotype::new("*1", "*2"),
+            Diplotype::new("*3", "*4")
+        ];
+
+        // Create some test variant details
+        let variant_details = vec![
+            PgxVariantDetails::new(
+                12345,
+                "test_variant_1".to_string(),
+                Some("rs123456".to_string()),
+                NormalizedVariant::new("chr1".to_string(), 1000, "A", "T", None).unwrap(),
+                NormalizedGenotype::new(crate::data_types::normalized_variant::Genotype::HeterozygousUnphased, None)
+            ),
+            PgxVariantDetails::new(
+                67890,
+                "test_variant_2".to_string(),
+                None,
+                NormalizedVariant::new("chr1".to_string(), 2000, "C", "G", None).unwrap(),
+                NormalizedGenotype::new(crate::data_types::normalized_variant::Genotype::HomozygousAlternate, None)
+            )
+        ];
+
+        // Test the new_inexact_diplotypes constructor
+        let gene_details = PgxGeneDetails::new_inexact_diplotypes(inexact_diplotypes.clone(), variant_details.clone()).unwrap();
+
+        // Verify the structure
+        assert_eq!(gene_details.diplotypes.len(), 1);
+        assert_eq!(gene_details.diplotypes[0].diplotype(), "NO_MATCH/NO_MATCH");
+
+        assert!(gene_details.simple_diplotypes.is_none());
+
+        assert!(gene_details.inexact_diplotypes.is_some());
+        assert_eq!(gene_details.inexact_diplotypes.as_ref().unwrap(), &inexact_diplotypes);
+
+        assert!(gene_details.variant_details.is_some());
+        assert_eq!(gene_details.variant_details.as_ref().unwrap(), &variant_details);
+
+        assert!(gene_details.mapping_details.is_none());
+        assert!(gene_details.multi_mapping_details.is_none());
     }
 }

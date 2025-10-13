@@ -12,7 +12,7 @@
         "chromosome": "chr1",
         "variants": {
           "777260": {
-            "name" : "faux",
+            "name" : "c.520C>T",
             "dbsnp_id": "rs772226819",
             "position": 201091993,
             "alleles": [
@@ -21,7 +21,7 @@
             ]
           },
           "777261": {
-            "name" : "faux",
+            "name" : "c.3257G>A",
             "dbsnp_id": "rs1800559",
             "position": 201060815,
             "alleles": [

@@ -266,7 +266,7 @@ pub fn diplotype_cyp2d6(
         debug!("Full diplotype for CYP2D6 => \"{}\"", diplotypes[0].diplotype());
 
         let pgx_gene_details = PgxGeneDetails::new_from_multi_mappings(
-            diplotypes, None, vec![]
+            diplotypes, None, None, vec![]
         )?;
         return Ok(pgx_gene_details);
     }
@@ -707,7 +707,12 @@ pub fn diplotype_cyp2d6(
     //       and also probably the full length D6 sequences somehow
     //       additionally, the ambig_chains is getting split out above; we can avoid the split by checking for .len() == 1 and then keep reads in order
     //       ideally, this would let us follow a read through the *whole* process and create a final BAM as well instead of the current intermediate
-    let pgx_gene_details = PgxGeneDetails::new_from_multi_mappings(diplotypes, Some(diplotypes_collapsed), multi_mapping_details)?;
+    let pgx_gene_details = PgxGeneDetails::new_from_multi_mappings(
+        diplotypes,
+        Some(diplotypes_collapsed),
+        Some(vec![deeplotype]),
+        multi_mapping_details
+    )?;
     Ok(pgx_gene_details)
 }
 
