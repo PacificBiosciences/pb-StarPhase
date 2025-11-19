@@ -5,6 +5,7 @@ Table of contents:
 * [Common uses cases](#common-use-cases)
 * [Supported upstream processes](#supported-upstream-processes)
 * [Output files](#output-files)
+* [Terminology](#terminology)
 * [FAQ](#faq)
 
 # Quickstart
@@ -69,10 +70,10 @@ pbstarphase diplotype \
 
 # Common use cases
 ## HLA and _CYP2D6_ diplotyping
-With v0.10.0, pb-StarPhase supports diplotyping of _HLA-A_, _HLA-B_, and _CYP2D6_ from an aligned BAM file.
+pb-StarPhase supports diplotyping of HLA genes and _CYP2D6_ from an aligned BAM file.
 If using targeted sequencing datasets, see [our recommended parameters](#can-i-diplotype-using-targeted-sequencing-data).
 To enable HLA and _CYP2D6_ diplotyping, simply provide the BAM file(s) in addition to the normal parameters.
-Both HLA and _CYP2D6_ diplotyping is more computationally expensive than the CPIC genes.
+Both HLA and _CYP2D6_ diplotyping are more computationally expensive than the variant-based genes.
 
 ```bash
 pbstarphase diplotype \
@@ -81,7 +82,7 @@ pbstarphase diplotype \
 ```
 
 ## Structural variant diplotyping
-Starting with v1.3.0, pb-StarPhase includes support for structural variants provided from an external program.
+pb-StarPhase includes support for structural variants provided from an external program.
 To enable structural variants (SVs), an additional VCF file must be provided using the `--sv-vcf` parameter:
 
 ```bash
@@ -103,7 +104,7 @@ The following upstream processes are supported as inputs to pb-StarPhase:
 
 * Data types
   * PacBio whole genome sequencing
-  * PacBio PGx panel - _CYP2D6_ currently unsupported
+  * PacBio PGx panel
 * Reference genomes
   * GRCh38 - we recommend the [human_GRCh38_no_alt_analysis_set](https://github.com/PacificBiosciences/reference_genomes/tree/main/reference_genomes/human_GRCh38_no_alt_analysis_set)
 * Aligners (BAM files):
@@ -111,6 +112,8 @@ The following upstream processes are supported as inputs to pb-StarPhase:
   * [minimap2](https://github.com/lh3/minimap2)
 * Variant callers
   * [DeepVariant](https://github.com/google/deepvariant) - For SNV/indel.
+* Structural variant callers
+  * [sawfish](https://github.com/PacificBiosciences/sawfish) - For SV deletions.
 * Phasers
   * [HiPhase](https://github.com/PacificBiosciences/HiPhase) - For phased inputs; phased inputs are generally recommended as this can reduce or remove ambiguity in the diplotype assignment.
 
@@ -128,12 +131,21 @@ Fields are described below, with a partial example further down:
   * `hla_version` - A tag indicating the IMGTHLA version; these are identical to GitHub tags on [https://github.com/ANHIG/IMGTHLA](https://github.com/ANHIG/IMGTHLA).
   * `build_time` - The time this database was built; in UTC format.
 * `gene_details` - The core output; each gene will have a key in this dictionary with the following information:
-  * `diplotypes` - A list of all matching diplotype combinations; ambiguous combinations (i.e., lack of phase information) may lead to more than one possible diplotype combination. For variant-based genes, this is always exact-matching combinations. For sequence-based genes, this will have the closest matching combinations.
+  * `diplotypes` - A list of all matching diplotype combinations; ambiguous combinations (i.e., lack of phase information) may lead to more than one possible diplotype combination. For variant-based genes, this is always exact-matching combinations. For sequence-based genes, this will have the closest matching combinations. If matching sub-alleles can be found for both haplotypes, then they will be reported in this field. If only matching core alleles can be found for both haplotypes, then the core alleles will be reported. Otherwise, `NO_MATCH` will be reported, indicating that one or both alleles do not match a defined core allele.
     * `hap1` - Name of the first haplotype in the diplotype.
     * `hap2` - Name of the second haplotype in the diplotype.
     * `diplotype` - Name of the combined diplotype; `{hap1}/{hap2}`.
   * `simple_diplotypes` - This has the same fields as `diplotypes`, but the alleles have been reduced to simple core allele forms. For example, `*4.002` becomes `*4`.
-  * `inexact_diplotypes` - For variant-based genes (most of them in StarPhase), this will only be populated if no exact-matching diplotypes were identifed (e.g., `diplotypes` will have `NO_MATCH`). In that case, the closest inexact matches will be included in this output. For HLA genes, this is currently always `None`. For CYP2D6, this will report the closest match and any variant differences between the observed sequence and the closest match. The format is `{closest_match} +{extra_variant} -{missing_variant} ?{ambiguous_variant}`. For example, `(0_CYP2D6*4.001 +rs28735595)` indicates an allele that best matches `*4.001` but contains the unexpected variant `rs28735595`.
+  * `inexact_diplotypes` - For variant-based genes (most of them in StarPhase), this will only be populated if no exact-matching diplotypes were identifed. In that case, the closest inexact matches will be included in this output. If an exact sub-allele cannot be identified for the variant-based genes, then this field will contain information on the closest matching allele combinations, factoring in both core and sub-allele variation and prioritizing core alleles first. For HLA genes, this is always `None`. For CYP2D6, this will report the closest match and any variant differences between the observed sequence and the closest match, but the detailed haplotype information may not be available (in which case `haplotype_1` and `haplotype_2` will be `null`). Each entry contains:
+    * `basic_diplotype` - Simplified string format of the inexact matching diplotype (same structure as `diplotypes`). The format is `{closest_match} +{extra_variant} -{missing_variant} ?{ambiguous_variant}`. For example, `(*2.001 +rs1234)` indicates an haplotype that best matches `*2.001` but contains the extra variant `rs1234`.
+    * `haplotype_1` - Optional detailed information about the first inexact haplotype, if available:
+      * `base_haplotype` - The base haplotype name that this inexact match is based on.
+      * `match_type` - The type of match: `SubAlleleMatch` (exact match to a sub-allele), `CoreMatch` (matches a core allele but not a sub-allele), or `NoMatch` (does not match a core allele).
+      * `variant_relationships` - A list of variants and their relationships to the base haplotype. Each variant has:
+        * `label` - A user-friendly label (e.g., rsID or `{chr}:{pos} {ref}>{alt}`).
+        * `is_vi` - True if there is a variant impact, indicating that the variant is part of a core allele definition.
+        * `variant_state` - The state of the variant relative to the base haplotype: `Match` (variant matches), `Unexpected` (variant present but not expected), `Missing` (variant expected but not present), or other ambiguous/unknown states.
+    * `haplotype_2` - Optional detailed information about the second inexact haplotype, with the same structure as `haplotype_1`. 
   * `variant_details` - Contains the list of all identified variants from the VCF file that match a variant definition. Will be `null` for HLA genes.
     * `variant_id` - The assigned variant identifier (unsigned integer) from the upstream database.
     * `variant_name` - The assigned name for this variant; this is typically a human-readable identifier that has been historically used in pharmacogenomic literature. CPIC has names as part of the API. For PharmVar, we use the RS ID when available, and the variant ID otherwise.
@@ -166,12 +178,13 @@ Fields are described below, with a partial example further down:
 Partial example:
 ```
 {
-  "pbstarphase_version": "0.8.0-fa50d82",
+  "pbstarphase_version": "2.0.0-5beadbd",
   "database_metadata": {
-    "pbstarphase_version": "0.8.0-79d4679",
-    "cpic_version": "API-2023-12-19T16:11:50.938951041Z",
-    "hla_version": "v.354.0-alpha",
-    "build_time": "2023-12-19T16:11:50.938951041Z"
+    "pbstarphase_version": "2.0.0-32213bb",
+    "cpic_version": "API-2025-10-30T14:44:40.595139065Z",
+    "hla_version": "v3.62.0-alpha",
+    "pharmvar_version": "6.2.17.2",
+    "build_time": "2025-10-30T14:44:40.595139065Z"
   },
   "gene_details": {
     ...
@@ -222,9 +235,13 @@ Partial example:
       ],
       "inexact_diplotypes": [
         {
-          "hap1": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)",
-          "hap2": "(0_CYP2D6*4.001 +rs28735595)",
-          "diplotype": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)/(0_CYP2D6*4.001 +rs28735595)"
+          "basic_diplotype": {
+            "hap1": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)",
+            "hap2": "(0_CYP2D6*4.001 +rs28735595)",
+            "diplotype": "(1_CYP2D6::CYP2D7::exon2) + (0_CYP2D6*4.001 +rs28735595)/(0_CYP2D6*4.001 +rs28735595)"
+          },
+          "haplotype_1": null,
+          "haplotype_2": null
         }
       ],
       "variant_details": null,
@@ -282,6 +299,8 @@ The `--pharmcat-tsv {filename}` option can be used in pb-StarPhase to generate t
 pb-StarPhase will generate a basic two-column TSV file with one column for the gene and one column for the diplotype call.
 If ambiguity is present, it will report "Multiple/Multiple" in place of the diplotype.
 If no matching diplotype is generated, it will report "NO_MATCH/NO_MATCH" in place of the diplotype.
+The PharmCAT TSV file will only contain core alleles in the output.
+In the event of ambiguity restricted to the sub-allele (e.g., "*2.001/*2.004" and "*2.002/*2.003" are equally valid), the single unique core allele is still reported (e.g., "*2/*2").
 An example partial/truncated output is below:
 
 ```
@@ -292,6 +311,22 @@ DPYD	NO_MATCH/NO_MATCH
 MT-RNR1	Reference
 ...
 ```
+
+# Terminology
+## Core alleles and variants
+In PharmVar, [core alleles](https://www.clinpgx.org/page/coreAllelesAndWobbles) are defined by a set of variants that either change an amino acid or impact expression in some way (e.g., splicing).
+The combination of variants in a core allele should be unique, meaning that no two core alleles will have an identical combination of variants.
+Any variant that is part of a core allele definition, we call a **core variant**.
+In general, the core alleles are used to predict the function of a gene.
+They are typically represented as a single integer value, such as "*2".
+
+## Sub-alleles and sub-variants
+**Sub-alleles** are forms of a core allele that are defined by both the core variants, but also addition **sub-variants** that theoretically do not change an amino acid or impact expression.
+All sub-alleles of a core allele will share the core variants, but should have different combinations of sub-variants.
+Any variant that is included in a sub-allele definition but excluded from *all* core allele definitions is categorized as a sub-variant.
+In general, the sub-allele is ignored when predicting gene function.
+Sub-alleles are typically represented as a float value, such as "*2.002".
+Additionally, the "#.001" form often indicates a sub-allele that has no additional sub-variants (e.g., sub-allele "*2.001" would have the same variants as the core allele "*2").
 
 # FAQ
 ## How do I update the database for pb-StarPhase?
@@ -333,6 +368,7 @@ Here is a brief list of some of the current debug outputs:
 
 * `consensus_{GENE}.fa` - Contains the full consensus sequences generated for a given `{GENE}`. Currently, this is only for HLA genes and _CYP2D6_.
 * `cyp2d6_alleles.json` - Contains details on variants that were identified for each _CYP2D6_ allele. This includes (1) "deep" haplotype labels indicating allelic differences such as `(2_CYP2D6*4.001 +rs28735595)` and (2) a list of variants that were identified or are missing relative to the assigned haplotype. See [debug outputs](./debug_outputs.md#cyp2d6-alleles) for more details.
+* `cyp2d6_alleles.vcf.gz` - A VCF file containing all _CYP2D6_ variants that were used in the final diplotype call. Each variant is represented as one row, with genotype information for each region (allele) in the diplotype. The VCF includes variant impact (VI) annotations from the database. Only variants relevant to diplotyping will be reported, and non-CYP2D6 alleles are excluded (e.g., hybrids, CYP2D7, deletions).
 * `cyp2d6_igv_custom` - Folder containing an IGV session and supporting data files for viewing the full-length reads aligned to the two CYP2D6 haplotypes for this dataset. Allows for manual detection of missed variants and inspection of direct evidence of copy-number in the reads. An example loaded session file should look similar to [example_session.png](../images/example_session.png). Exact formatting may vary depending on IGV version and user settings.
   * `custom_igv_session.xml` - Contains the IGV session information that loads the following files. This is what most users should access first.
   * `custom_alignments.bam` - Contains the full-length reads from the input BAM file re-aligned to the custom reference file.

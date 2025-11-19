@@ -18,9 +18,11 @@ use crate::cyp2d6::debug::DeeplotypeDebug;
 use crate::cyp2d6::haplotyper::{AlleleMapping, Cyp2d6Extractor};
 use crate::cyp2d6::region::{Cyp2d6DetailLevel, Cyp2d6Region};
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
+use crate::cyp2d6::vcf_writer::write_cyp2d6_vcf;
 use crate::cyp2d6::visualization::create_custom_cyp2d6_reference;
-use crate::data_types::database::PgxDatabase;
-use crate::data_types::pgx_diplotypes::{Diplotype, PgxGeneDetails, PgxMultiMappingDetails};
+use crate::data_types::pgx_diplotype::Diplotype;
+use crate::data_types::starphase_json::{PgxGeneDetails, PgxMultiMappingDetails};
+use crate::database::pgx_database::PgxDatabase;
 use crate::util::file_io::save_fasta;
 use crate::util::homopolymers::hpc_with_guide;
 use crate::visualization::debug_bam_writer::{unmapped_record, DebugBamWriter};
@@ -404,6 +406,26 @@ pub fn diplotype_cyp2d6(
         };
     }
 
+    // write the VCF file if requested
+    if let Some(debug_folder) = cli_settings.debug_folder.as_ref() {
+        let vcf_fn = debug_folder.join("cyp2d6_alleles.vcf.gz");
+        debug!("Writing CYP2D6 diplotypes to {vcf_fn:?}");
+        match write_cyp2d6_vcf(&hap_regions, &vcf_fn, d6_typer.loaded_variants()) {
+            Ok(()) => {},
+            Err(e) => {
+                bail!("Error while writing CYP2D6 VCF: {e}");
+            }
+        };
+
+        // save the index file also (.tbi)
+        match hiphase::writers::vcf_util::build_bcf_index(vcf_fn, None, 1, true) {
+            Ok(()) => {},
+            Err(e) => {
+                bail!("Error while building CYP2D6 VCF index: {e}");
+            }
+        };
+    }
+
     // build up all the chains
     let mut qname_chains: BTreeMap<String, Vec<Vec<usize>>> = Default::default();
     let mut unique_chains: HashSet<Vec<usize>> = Default::default();
@@ -688,8 +710,10 @@ pub fn diplotype_cyp2d6(
     // finally lets build our results
     let hap1 = convert_chain_to_hap(&best_result[0], &hap_regions, Cyp2d6DetailLevel::DeepAlleles, cyp_translate);
     let hap2 = convert_chain_to_hap(&best_result[1], &hap_regions, Cyp2d6DetailLevel::DeepAlleles, cyp_translate);
-    let deeplotype = Diplotype::new(&hap1, &hap2);
-    debug!("Full deeplotype for CYP2D6 => \"{}\"", deeplotype.diplotype());
+    let deeplotype = crate::data_types::pgx_diplotype::InexactDiplotype::new_diplotype_only(
+        Diplotype::new(&hap1, &hap2)
+    );
+    debug!("Full inexact diplotype for CYP2D6 => \"{}\"", deeplotype.basic_diplotype().diplotype());
 
     // finally lets build our results
     let hap1 = convert_chain_to_hap(&best_result[0], &hap_regions, Cyp2d6DetailLevel::SubAlleles, cyp_translate);

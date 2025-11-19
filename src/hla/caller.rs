@@ -15,8 +15,9 @@ use waffle_con::dual_consensus::{DualConsensus, DualConsensusDWFA};
 
 use crate::cli::diplotype::DiplotypeSettings;
 use crate::data_types::coordinates::Coordinates;
-use crate::data_types::database::PgxDatabase;
-use crate::data_types::pgx_diplotypes::{Diplotype, PgxGeneDetails, PgxMappingDetails};
+use crate::data_types::pgx_diplotype::Diplotype;
+use crate::data_types::starphase_json::{PgxGeneDetails, PgxMappingDetails};
+use crate::database::pgx_database::PgxDatabase;
 use crate::hla::alleles::{HlaAlleleDefinition, NORMALIZING_HLA_GENES};
 use crate::hla::debug::{DualPassingStats, HlaDebug, ReadMappingStats};
 use crate::hla::mapping::HlaMappingStats;

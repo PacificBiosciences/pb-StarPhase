@@ -11,9 +11,9 @@ use std::collections::BTreeMap;
 use crate::cyp2d6::definitions::{Cyp2d6Config, generate_cyp_hybrids};
 use crate::cyp2d6::region::Cyp2d6Region;
 use crate::cyp2d6::region_label::{Cyp2d6RegionLabel, Cyp2d6RegionType};
-use crate::cyp2d6::region_variants::{Cyp2d6RegionVariant, VariantAlleleRelationship};
-use crate::data_types::database::PgxDatabase;
+use crate::data_types::region_variants::{RegionVariant, VariantAlleleRelationship};
 use crate::data_types::mapping::MappingStats;
+use crate::database::pgx_database::PgxDatabase;
 use crate::util::mapping::standard_hifi_aligner;
 
 /// The primary interface for identifying regions of interest within a sequence.
@@ -44,7 +44,7 @@ impl<'a> Cyp2d6Extractor<'a> {
     /// * if hybrid generation fails
     pub fn new(database: &'a PgxDatabase, reference_genome: &'a ReferenceGenome) -> Result<Cyp2d6Extractor<'a>, Box<dyn std::error::Error>> {
         // first, just load the variants in
-        let loaded_variants = load_variant_database(database)?;
+        let loaded_variants = LoadedVariants::load_variant_database(database)?;
         
         // this is a map from an allele ID to the vector of 0s and 1s for the variant set
         let mut haplotype_lookup: BTreeMap<Cyp2d6RegionLabel, Vec<u8>> = Default::default();
@@ -585,7 +585,7 @@ impl<'a> Cyp2d6Extractor<'a> {
                     let label = self.loaded_variants.variant_label(i).to_string();
                     let is_vi = self.loaded_variants.is_vi(i);
 
-                    rv.push(Cyp2d6RegionVariant::new(
+                    rv.push(RegionVariant::new(
                         label, is_vi, variant_state
                     ));
                 }
@@ -619,44 +619,157 @@ impl<'a> Cyp2d6Extractor<'a> {
 }
 
 
+/// Metadata for a variant that has been loaded in preparation for genotyping.
+#[derive(Clone, Debug)]
+pub struct VariantMetadata {
+    /// User-friendly label, this is expected to be cross-referenced to something else; e.g. rsID or {chr}:{pos} {ref}>{alt}
+    pub label: String,
+    /// True if flagged as VI = Variant Impact; this is used to distinguish the core allele from the rest
+    pub vi_label: Option<String>
+}
+
 /// Wrapper for variants that have been loaded in preparation for genotyping.
 pub struct LoadedVariants {
     /// variants ordered by position and sequence
     ordered_variants: Vec<Variant>,
+    /// metadata for each variant, one-to-one with `ordered_variants`
+    variant_metadata: Vec<VariantMetadata>,
     /// a lookup from (position, REF, ALT) to index in `ordered_variants`
     variant_lookup: HashMap<(usize, String, String), usize>,
-    /// identifier for a variant, we will build one if none exists
-    variant_labels: Vec<String>,
-    /// one-to-one with `ordered_variants`; if True, this variant had a VI flag
-    is_vi: Vec<bool>
+    /// a lookup from label to index in `variant_metadata`
+    label_lookup: HashMap<String, usize>,
 }
 
 impl LoadedVariants {
-    /// Constructor for the loaded variants, see parameters.
+    /// This will parse the relevant CYP2D6 variants in preparation for using in GraphWFA.
+    /// This is basically the constructor for the LoadedVariants struct.
     /// # Arguments
-    /// * `ordered_variants` - variants ordered by position and sequence
-    /// * `variant_lookup` - a lookup from (position, REF, ALT) to index in `ordered_variants`
-    /// * `variant_labels` - a user-friendly label for the variant, which is usually an rsID
-    /// * `is_vi` - one-to-one with `ordered_variants`; if True, this variant had a VI flag indicating that it distinguishes the core allele
+    /// * `database` - the PGx database pre-loaded, we need to translate this for GraphWFA
     /// # Errors
-    /// * if `ordered_variants`, `is_vi`, and `variant_lookup` do not all have the same number of entriesa
-    pub fn new(ordered_variants: Vec<Variant>, variant_lookup: HashMap<(usize, String, String), usize>, variant_labels: Vec<String>, is_vi: Vec<bool>) -> Result<LoadedVariants, Box<dyn std::error::Error>> {
-        if ordered_variants.len() != is_vi.len() {
-            bail!("ordered_variants and is_vi must be same length");
-        }
-        if ordered_variants.len() != variant_lookup.len() {
-            bail!("ordered_variants and variant_lookup must be same length");
-        }
-        if ordered_variants.len() != variant_labels.len() {
-            bail!("order_variants and variant_labels must be the same length");
-        }
-        Ok(LoadedVariants {
-            ordered_variants, variant_lookup, variant_labels, is_vi
-        })
-    }
+    /// * if allele translation to UTF8 fails
+    pub fn load_variant_database(database: &PgxDatabase) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut inserted_variants: HashSet<(usize, String, String)> = Default::default();
+        let mut unsorted_variants = vec![];
+        let mut vi_set: HashMap<(usize, String, String), String> = Default::default();
+        let mut all_set: HashSet<(usize, String, String)> = Default::default();
+        for (_allele_id, allele_def) in database.cyp2d6_gene_def().iter() {
+            for variant_def in allele_def.variants().iter() {
+                let var_pos = variant_def.position();
+                let var_ref = variant_def.reference().to_string();
+                let var_alt = variant_def.alternate().to_string();
+                let var_key = (var_pos, var_ref.clone(), var_alt.clone());
 
-    pub fn ordered_variants(&self) -> &[Variant] {
-        &self.ordered_variants
+                // mark if this is a VI variant
+                if let Some(vi_label) = variant_def.extras().get("VI") {
+                    vi_set.insert(var_key.clone(), vi_label.to_string());
+                }
+                all_set.insert(var_key.clone());
+
+                if inserted_variants.contains(&var_key) {
+                    // do nothing, we already inserted this one
+                } else {
+                    // create the variant and insert it
+                    let variant = if var_ref.len() == 1 {
+                        if var_alt.len() == 1 {
+                            Variant::new_snv(
+                                0, var_pos as i64,
+                                var_ref.into_bytes(), var_alt.into_bytes(),
+                                0, 1)
+                        } else {
+                            Variant::new_insertion(
+                                0, var_pos as i64,
+                                var_ref.into_bytes(), var_alt.into_bytes(),
+                                0, 1
+                            )
+                        }
+                    } else if var_alt.len() == 1 {
+                        Variant::new_deletion(
+                            0, var_pos as i64,
+                            var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
+                            0, 1)
+                    } else {
+                        Variant::new_indel(
+                            0, var_pos as i64,
+                            var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
+                            0, 1
+                        )
+                    };
+
+                    // also add the variant label
+                    let label = match variant_def.id() {
+                        Some(id) => id.to_string(),
+                        None => variant_def.variant_string()
+                    };
+
+                    // add the variant and label as a tuple so sorting is preserved later
+                    unsorted_variants.push((variant, label));
+
+                    // mark this key as inserted
+                    inserted_variants.insert(var_key);
+                }
+            }
+        }
+
+        // sort the variants so we can slice it up when we need to later
+        unsorted_variants.sort_by_key(|v| v.0.position());
+
+        // unzip the variant and labels
+        let (variant_list, variant_labels): (Vec<Variant>, Vec<String>) = unsorted_variants.into_iter().unzip();
+
+        /*
+        for v in variant_list.iter() {
+            println!("{v:?}");
+        }
+        */
+        let num_variants = variant_list.len();
+        let first_variant_pos = variant_list[0].position() as u64;
+        let last_variant_pos = variant_list.last().unwrap().position() as u64;
+        debug!("Found {} unique variants for GraphWFA from chr22:{}-{}", num_variants, first_variant_pos+1, last_variant_pos+1);
+
+        // build a lookup table for each of the variants and also the haplotypes
+        let mut variant_lookup: HashMap<(usize, String, String), usize> = Default::default();
+        // quick lookup from variant index to know if it is VI or not
+        let mut is_vi_lookup: Vec<Option<String>> = vec![None; num_variants];
+        for (i, variant) in variant_list.iter().enumerate() {
+            let var_key = (
+                variant.position() as usize,
+                String::from_utf8(variant.get_allele0().to_vec())?,
+                String::from_utf8(variant.get_allele1().to_vec())?
+            );
+
+            // if this is VI, label it as such
+            if let Some(vi_label) = vi_set.get(&var_key) {
+                is_vi_lookup[i] = Some(vi_label.clone());
+            }
+
+            // now save this in our hashmap index
+            variant_lookup.insert(var_key, i);
+        }
+
+        // build the metadata for each variant
+        let variant_metadata: Vec<VariantMetadata> = variant_labels.into_iter()
+            .zip(is_vi_lookup)
+            .map(|(label, vi_label)| VariantMetadata {
+                label, vi_label
+            })
+            .collect();
+
+        // build a lookup from label to index in `variant_metadata`
+        let label_lookup: HashMap<String, usize> = variant_metadata.iter()
+            .enumerate()
+            .map(|(i, v)| (v.label.clone(), i))
+            .collect();
+
+        // final sanity checks
+        assert_eq!(variant_list.len(), variant_metadata.len());
+        assert_eq!(variant_list.len(), variant_lookup.len());
+
+        Ok(LoadedVariants {
+            ordered_variants: variant_list,
+            variant_metadata,
+            variant_lookup,
+            label_lookup
+        })
     }
 
     /// Searches for a given variant in our loaded variants and return the index
@@ -673,6 +786,18 @@ impl LoadedVariants {
         }
     }
 
+    /// Searches for a given variant label in our loaded variants and return the index
+    /// # Arguments
+    /// * `label` - the label to find
+    /// # Errors
+    /// * if the label is not found
+    pub fn index_label(&self, label: &str) -> Result<usize, Box<dyn std::error::Error>> {
+        match self.label_lookup.get(label) {
+            Some(&idx) => Ok(idx),
+            None => bail!("label {label} not found")
+        }
+    }
+
     /// Retrieves the position of the first variant in the dataset
     pub fn first_variant_pos(&self) -> i64 {
         self.ordered_variants[0].position()
@@ -685,126 +810,27 @@ impl LoadedVariants {
 
     /// Returns true if the variant at the given index is VI
     pub fn is_vi(&self, index: usize) -> bool {
-        self.is_vi[index]
+        self.variant_metadata[index].vi_label.is_some()
     }
 
     /// Returns the total number of variants marked as VI
     pub fn num_vi(&self) -> usize {
-        self.is_vi.iter().filter(|&x| *x).count()
+        self.variant_metadata.iter().filter(|v| v.vi_label.is_some()).count()
     }
 
     /// Returns the label of a given variant index
     pub fn variant_label(&self, index: usize) -> &str {
-        &self.variant_labels[index]
-    }
-}
-
-/// This will parse the relevant CYP2D6 variants in preparation for using in GraphWFA
-/// # Arguments
-/// * `database` - the PGx database pre-loaded, we need to translate this for GraphWFA
-/// # Errors
-/// * if allele translation to UTF8 fails
-fn load_variant_database(database: &PgxDatabase) -> Result<LoadedVariants, Box<dyn std::error::Error>> {
-    let mut inserted_variants: HashSet<(usize, String, String)> = Default::default();
-    let mut unsorted_variants = vec![];
-    let mut vi_set: HashSet<(usize, String, String)> = Default::default();
-    let mut all_set: HashSet<(usize, String, String)> = Default::default();
-    for (_allele_id, allele_def) in database.cyp2d6_gene_def().iter() {
-        for variant_def in allele_def.variants().iter() {
-            let var_pos = variant_def.position();
-            let var_ref = variant_def.reference().to_string();
-            let var_alt = variant_def.alternate().to_string();
-            let is_vi = variant_def.extras().get("VI").is_some();
-            let var_key = (var_pos, var_ref.clone(), var_alt.clone());
-            
-            // mark if this is a VI variant
-            if is_vi {
-                vi_set.insert(var_key.clone());
-            }
-            all_set.insert(var_key.clone());
-            
-            if inserted_variants.contains(&var_key) {
-                // do nothing, we already inserted this one
-            } else {
-                // create the variant and insert it
-                let variant = if var_ref.len() == 1 {
-                    if var_alt.len() == 1 {
-                        Variant::new_snv(
-                            0, var_pos as i64,
-                            var_ref.into_bytes(), var_alt.into_bytes(),
-                            0, 1)
-                    } else {
-                        Variant::new_insertion(
-                            0, var_pos as i64,
-                            var_ref.into_bytes(), var_alt.into_bytes(),
-                            0, 1
-                        )
-                    }
-                } else if var_alt.len() == 1 {
-                    Variant::new_deletion(
-                        0, var_pos as i64,
-                        var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
-                        0, 1)
-                } else {
-                    Variant::new_indel(
-                        0, var_pos as i64,
-                        var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
-                        0, 1
-                    )
-                };
-
-                // also add the variant label
-                let label = match variant_def.id() {
-                    Some(id) => id.to_string(),
-                    None => variant_def.variant_string()
-                };
-
-                // add the variant and label as a tuple so sorting is preserved later
-                unsorted_variants.push((variant, label));
-
-                // mark this key as inserted
-                inserted_variants.insert(var_key);
-            }
-        }
+        &self.variant_metadata[index].label
     }
 
-    // sort the variants so we can slice it up when we need to later    
-    unsorted_variants.sort_by_key(|v| v.0.position());
-
-    // unzip the variant and labels
-    let (variant_list, variant_labels): (Vec<Variant>, Vec<String>) = unsorted_variants.into_iter().unzip();
-
-    /*
-    for v in variant_list.iter() {
-        println!("{v:?}");
-    }
-    */
-    let num_variants = variant_list.len();
-    let first_variant_pos = variant_list[0].position() as u64;
-    let last_variant_pos = variant_list.last().unwrap().position() as u64;
-    debug!("Found {} unique variants for GraphWFA from chr22:{}-{}", num_variants, first_variant_pos+1, last_variant_pos+1);
-
-    // build a lookup table for each of the variants and also the haplotypes
-    let mut variant_lookup: HashMap<(usize, String, String), usize> = Default::default();
-    // quick lookup from variant index to know if it is VI or not
-    let mut is_vi_lookup: Vec<bool> = vec![false; num_variants];
-    for (i, variant) in variant_list.iter().enumerate() {
-        let var_key = (
-            variant.position() as usize,
-            String::from_utf8(variant.get_allele0().to_vec())?,
-            String::from_utf8(variant.get_allele1().to_vec())?
-        );
-
-        // if this is VI, label it as such
-        if vi_set.contains(&var_key) {
-            is_vi_lookup[i] = true;
-        }
-
-        // now save this in our hashmap index
-        variant_lookup.insert(var_key, i);
+    // getters - we only want this for the actual variants and metadata, not the lookup tables
+    pub fn ordered_variants(&self) -> &[Variant] {
+        &self.ordered_variants
     }
 
-    LoadedVariants::new(variant_list, variant_lookup, variant_labels, is_vi_lookup)
+    pub fn variant_metadata(&self) -> &[VariantMetadata] {
+        &self.variant_metadata
+    }
 }
 
 /// Contains an allele name, the region it was found, and the mapping stats.
@@ -893,13 +919,17 @@ mod tests {
         // can be test on our real DB file
         let test_db_fn = std::path::PathBuf::from("./data/v0.9.0/cpic_20240404.json.gz");
         let database: PgxDatabase = crate::util::file_io::load_json(&test_db_fn).unwrap();
-        let vcb = load_variant_database(&database).unwrap();
+        let vcb = LoadedVariants::load_variant_database(&database).unwrap();
 
         // check all the high level, easy-to-verify stats
         assert_eq!(vcb.first_variant_pos(), 42126309);
         assert_eq!(vcb.last_variant_pos(), 42132374);
         assert_eq!(vcb.ordered_variants().len(), 387);
         assert_eq!(vcb.num_vi(), 144);
+
+        // check the label lookup
+        assert_eq!(vcb.index_label("rs12169962").unwrap(), 0); // first
+        assert_eq!(vcb.index_label("rs1080985").unwrap(), 386); // last
     }
 
     #[test]

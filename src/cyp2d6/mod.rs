@@ -15,7 +15,7 @@ pub mod haplotyper;
 pub mod region;
 /// Wrapper for region labeling and constraining based on the labels
 pub mod region_label;
-/// Wrapper for region variant labeling
-pub mod region_variants;
+/// Contains a VCF format for CYP2D6 alleles that were identified
+pub mod vcf_writer;
 /// Contains functionality for generating visualization of CYP2D6-related components
 pub mod visualization;

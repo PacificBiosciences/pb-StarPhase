@@ -13,11 +13,13 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::diplotype::DiplotypeSettings;
 use crate::cyp2d6::caller::diplotype_cyp2d6;
-use crate::data_types::database::{PgxDatabase, PgxGene, PgxVariant};
-use crate::data_types::gene_definition::GeneCollection;
-use crate::data_types::normalized_variant::{Genotype, NormalizedGenotype, NormalizedVariant, NormalizedPgxHaplotype, SvType};
-use crate::data_types::pgx_diplotypes::{PgxDiplotypes, PgxGeneDetails, PgxVariantDetails, Diplotype};
-use crate::data_types::pgx_structural_variants::PgxStructuralVariants;
+use crate::data_types::normalized_variant::{Genotype, NormalizedGenotype, NormalizedPgxHaplotype, NormalizedVariant, QuantMatchResult, SvType};
+use crate::data_types::pgx_diplotype::{Diplotype, InexactDiplotype, InexactHaplotype};
+use crate::data_types::region_variants::{RegionVariant, VariantAlleleRelationship};
+use crate::data_types::starphase_json::{StarphaseJson, PgxGeneDetails, PgxVariantDetails};
+use crate::database::pgx_database::{PgxDatabase, PgxGene, PgxVariant};
+use crate::database::gene_definition::GeneCollection;
+use crate::database::pgx_structural_variants::PgxStructuralVariants;
 use crate::hla::caller::{diplotype_hla_batch, diplotype_hla};
 use crate::util::file_io::load_file_lines;
 use crate::util::htslib_quickparse::get_vcf_samples;
@@ -39,8 +41,8 @@ use crate::visualization::igv_session_writer::IgvSessionWriter;
 pub fn call_diplotypes(
     database: &PgxDatabase, opt_vcf_fn: Option<&Path>, reference_genome: Option<&ReferenceGenome>,
     bam_fns: &[PathBuf], cli_settings: &DiplotypeSettings
-) -> Result<PgxDiplotypes, Box<dyn std::error::Error>> {
-    let mut diplotypes: PgxDiplotypes = PgxDiplotypes::new(database.database_metadata().clone());
+) -> Result<StarphaseJson, Box<dyn std::error::Error>> {
+    let mut diplotypes: StarphaseJson = StarphaseJson::new(database.database_metadata().clone());
 
     // figure out the set of genes to include / exclude
     let opt_exclude_set: Option<HashSet<String>> = if let Some(efn) = cli_settings.exclude_fn.as_deref() {
@@ -87,8 +89,9 @@ pub fn call_diplotypes(
             debug!("Loaded {} normalized variants.", variant_hash.len());
             debug!("Loaded {} normalized haplotypes.", normalized_haplotypes.len());
 
-            // load the SV haplotypes also, but keep them separate
+            // load the SV haplotypes and build the core allele lookup
             let opt_structural_variants = gene_entry.structural_variants();
+            let core_allele_lookup = build_core_allele_lookup(&normalized_haplotypes, opt_structural_variants)?;
 
             // make sure we have variants, otherwise we can't do anything
             if variant_hash.is_empty() {
@@ -97,9 +100,9 @@ pub fn call_diplotypes(
                 let all_ref_diplotype = Diplotype::new(reference_name, reference_name);
 
                 debug!("\t{:?}", all_ref_diplotype.diplotype());
-                let gene_details = PgxGeneDetails::new(
-                    vec![all_ref_diplotype],
-                    None,
+                let gene_details = PgxGeneDetails::new_suballele_match(
+                    vec![all_ref_diplotype.clone()],
+                    Some(vec![all_ref_diplotype]),
                     vec![]
                 )?;
                 diplotypes.insert(gene_name.clone(), gene_details)?;
@@ -125,11 +128,23 @@ pub fn call_diplotypes(
             
             // finally, call the diplotype from the loaded variants
             let diplotype = solve_diplotype(&normalized_haplotypes, &variant_hash, &vcf_variants)?;
-            if diplotype.is_exact_match() {
-                debug!("Diplotypes for {gene_name} => {:?}", diplotype.diplotypes.iter().map(|d| d.diplotype()).collect::<Vec<&str>>());
+            if diplotype.is_exact_sub_match() {
+                // this is an exact match down to the sub-allele level
+                debug!("Exact diplotypes for {gene_name} => {:?}", diplotype.extended_diplotypes.iter().map(|d| d.basic_diplotype().diplotype()).collect::<Vec<&str>>());
+            } else if diplotype.is_exact_core_match() {
+                // this is an exact match down to the core allele level
+                debug!("Diplotypes for {gene_name} => {:?}", diplotype.extended_diplotypes.iter().map(|d| d.basic_diplotype().diplotype()).collect::<Vec<&str>>());
+                debug!(
+                    "Diplotype solution scores for {gene_name} => {} sub-allele missing variants, {} sub-allele extra variants",
+                    diplotype.sub_missing_variants, diplotype.sub_extra_variants
+                );
             } else {
-                debug!("Inexact diplotypes for {gene_name} => {:?}", diplotype.diplotypes.iter().map(|d| d.diplotype()).collect::<Vec<&str>>());
-                debug!("Diplotype solution scores for {gene_name} => {} missing variants, {} extra variants", diplotype.num_missing_variants, diplotype.num_extra_variants);
+                // this is an inexact match
+                debug!("Inexact diplotypes for {gene_name} => {:?}", diplotype.extended_diplotypes.iter().map(|d| d.basic_diplotype().diplotype()).collect::<Vec<&str>>());
+                debug!(
+                    "Diplotype solution scores for {gene_name} => {} core missing variants, {} core extra variants, {} sub-allele missing variants, {} sub-allele extra variants",
+                    diplotype.core_missing_variants, diplotype.core_extra_variants, diplotype.sub_missing_variants, diplotype.sub_extra_variants
+                );
             }
 
             // save the variant details for output
@@ -141,7 +156,8 @@ pub fn call_diplotypes(
                             "structural_variant".to_string(),
                             None,
                             nv,
-                            ng
+                            ng,
+                            true // all SVs are core variants right now
                         )
                     } else {
                         let variant_meta = variant_hash.get(&nv).unwrap();
@@ -150,20 +166,36 @@ pub fn call_diplotypes(
                             variant_meta.name.clone(),
                             variant_meta.dbsnp_id.clone(),
                             nv,
-                            ng
+                            ng,
+                            variant_meta.is_core_variant
                         )
                     }
                 })
                 .collect();
-            let gene_details = if diplotype.is_exact_match() {
-                PgxGeneDetails::new(
-                    diplotype.diplotypes,
-                    None,
+
+            let gene_details = if diplotype.is_exact_sub_match() {
+                // happy path:
+                // this is an exact match down to the sub-allele level
+                // main diplotypes are sub-alleles, simply diplotypes are core alleles, and there are no extras
+                let simple_diplotypes = simplify_diplotypes(&diplotype.main_diplotypes, &core_allele_lookup)?;
+                PgxGeneDetails::new_suballele_match(
+                    diplotype.main_diplotypes,
+                    Some(simple_diplotypes),
+                    variant_details
+                )?
+            } else if diplotype.is_exact_core_match() {
+                // this is an exact match down to the core allele level, BUT NOT the sub-allele level
+                let simple_diplotypes = simplify_diplotypes(&diplotype.main_diplotypes, &core_allele_lookup)?;
+                PgxGeneDetails::new_core_match(
+                    simple_diplotypes.clone(), // if we only match to the core, then we need to have our main report as core
+                    diplotype.extended_diplotypes, // this may still be sub-alleles +- extras
+                    Some(simple_diplotypes), // simple diplotypes are core alleles still
                     variant_details
                 )?
             } else {
+                // not even a core allele match, so only extended diplotypes matter here
                 PgxGeneDetails::new_inexact_diplotypes(
-                    diplotype.diplotypes,
+                    diplotype.extended_diplotypes,
                     variant_details
                 )?
             };
@@ -324,13 +356,64 @@ pub fn call_diplotypes(
 
 /// This is just a basic wrapper for variant-level metadata that we can tag on NormalizedVariants.
 #[derive(Clone, Debug, Default, PartialEq)]
-struct VariantMeta {
-    /// CPIC variant ID
+pub struct VariantMeta {
+    /// Variant ID
     pub variant_id: u64,
-    /// CPIC variant name
+    /// Variant name
     pub name: String,
     /// DBSNP ID, if available
-    pub dbsnp_id: Option<String>
+    pub dbsnp_id: Option<String>,
+    /// Whether this variant is part of a core allele definition
+    pub is_core_variant: bool
+}
+
+/// This will build a lookup table of all the core alleles for a gene.
+/// For example, "*4.002" -> "*4".
+/// # Arguments
+/// * `normalized_haplotypes` - the normalized haplotypes for the gene
+/// * `opt_structural_variants` - the structural variants for the gene, if any
+fn build_core_allele_lookup(normalized_haplotypes: &[NormalizedPgxHaplotype], opt_structural_variants: Option<&PgxStructuralVariants>) -> Result<BTreeMap<String, String>, Box<dyn std::error::Error>> {
+    // baseline haplotypes that everything should have
+    let mut core_allele_lookup: BTreeMap<String, String> = normalized_haplotypes.iter()
+        .map(|h| {
+            // if it's a core haplotype, we use the core allele, otherwise the core allele is itself
+            let core_allele = h.core_allele().unwrap_or(h.haplotype_name()).to_string();
+            (h.haplotype_name().to_string(), core_allele)
+        })
+        .collect();
+
+    // if we have structural variants, we need to add them to the lookup
+    if let Some(structural_variants) = opt_structural_variants {
+        // add in all SV key types here, which are the full gene deletions and partial gene deletions
+        for sv_key in structural_variants.full_gene_deletions().keys().cloned()
+            .chain(structural_variants.partial_gene_deletions().keys().cloned()) {
+            let int_component = sv_key.split('.').next().unwrap_or(&sv_key).to_string();
+            core_allele_lookup.insert(sv_key, int_component);
+        }
+    }
+
+    Ok(core_allele_lookup)
+}
+
+/// This will simplify the diplotypes to the core alleles.
+/// # Arguments
+/// * `diplotypes` - the list of diplotypes to simplify
+/// * `variant_hash` - the set of variant metadata
+/// # Errors
+/// * if a variant is not found in the variant hash
+fn simplify_diplotypes(diplotypes: &[Diplotype], core_allele_lookup: &BTreeMap<String, String>) -> Result<Vec<Diplotype>, Box<dyn std::error::Error>> {
+    let mut simplified_diplotypes: Vec<Diplotype> = vec![];
+    for diplotype in diplotypes.iter() {
+        // these errors should not happen, but we will handle them gracefully here
+        let h1 = core_allele_lookup.get(diplotype.hap1()).ok_or(
+            format!("Missing core allele for {}", diplotype.hap1())
+        )?;
+        let h2 = core_allele_lookup.get(diplotype.hap2()).ok_or(
+            format!("Missing core allele for {}", diplotype.hap2())
+        )?;
+        simplified_diplotypes.push(Diplotype::new(h1, h2));
+    }
+    Ok(simplified_diplotypes)
 }
 
 /// This will load all the haplotypes from the database and normalize them.
@@ -356,13 +439,17 @@ fn load_database_haplotypes(gene_entry: &PgxGene, reference_genome: Option<&Refe
     let pgx_variants = gene_entry.variants();
     for (haplotype_name, pgx_haplotype) in gene_entry.defined_haplotypes() {
         // initialize a haplotype
-        let mut normalized_haplotype = NormalizedPgxHaplotype::new(haplotype_name.clone());
+        let mut normalized_haplotype = NormalizedPgxHaplotype::new(
+            haplotype_name.clone(),
+            pgx_haplotype.core_allele().map(|s| s.to_string())
+        );
         let mut normalized_variant_meta: Vec<VariantMeta> = vec![];
         let mut normalized: bool = true;
         for (variant_id, variant_allele) in pgx_haplotype.haplotype().iter() {
             let variant: &PgxVariant = pgx_variants.get(variant_id).ok_or(format!("variant {variant_id} is referenced but not defined"))?;
             let dbsnp: &Option<String> = variant.dbsnp_id();
             let variant_name: String = variant.name().to_string();
+            let is_core_variant = variant.is_core_variant();
             
             let alleles = variant.alleles();
             if alleles.len() < 2 {
@@ -394,7 +481,8 @@ fn load_database_haplotypes(gene_entry: &PgxGene, reference_genome: Option<&Refe
                         normalized_variant_meta.push(VariantMeta{
                             variant_id: *variant_id, 
                             name: variant_name,
-                            dbsnp_id: dbsnp.clone()
+                            dbsnp_id: dbsnp.clone(),
+                            is_core_variant
                         });
                     },
                     Err(e) => {
@@ -1030,6 +1118,17 @@ fn is_partial_deletion(gene_collection: &GeneCollection, structural_variants: &P
                 }
             }
 
+            // exons are stored in reference orientation, so if we are on the reverse strand, we need to reverse the indices
+            let is_forward_strand = gene_def.is_forward_strand();
+            if !is_forward_strand {
+                // subtract the index from the total number of exons-1 to get the reverse index
+                let num_exons = gene_def.exons().len();
+                first_exon_deleted = first_exon_deleted.map(|i| (num_exons-1 - i));
+                last_exon_deleted = last_exon_deleted.map(|i| (num_exons-1 - i));
+                // swap the values to get the correct range
+                std::mem::swap(&mut first_exon_deleted, &mut last_exon_deleted);
+            }
+
             if let (Some(s_index), Some(e_index)) = (first_exon_deleted, last_exon_deleted) {
                 // we have one or more exons deleted, e_index needs to get +1
                 Some((g.clone(), s_index..(e_index+1)))
@@ -1063,18 +1162,30 @@ fn is_partial_deletion(gene_collection: &GeneCollection, structural_variants: &P
     Ok(opt_del_id)
 }
 
+#[derive(Debug)]
 struct DiplotypeSolution {
-    /// The number of missing variants, if this and num_extra_variants are both 0, then we have an exact match
-    pub num_missing_variants: usize,
-    /// The number of extra variants
-    pub num_extra_variants: usize,
+    /// The number of core missing variants, if this and core_extra_variants are both 0, then we have a core allele match
+    pub core_missing_variants: usize,
+    /// The number of core extra variants
+    pub core_extra_variants: usize,
+    /// The number of sub-allele missing variants; if this and sub_extra_variants are also both 0, then we have a sub-allele match
+    pub sub_missing_variants: usize,
+    /// The number of sub-allele extra variants
+    pub sub_extra_variants: usize,
     /// The list of diplotypes that were found with the given scores
-    pub diplotypes: Vec<Diplotype>,
+    pub main_diplotypes: Vec<Diplotype>,
+    /// The list of diplotypes with extras
+    pub extended_diplotypes: Vec<InexactDiplotype>,
 }
 
 impl DiplotypeSolution {
-    pub fn is_exact_match(&self) -> bool {
-        self.num_missing_variants == 0 && self.num_extra_variants == 0
+    pub fn is_exact_core_match(&self) -> bool {
+        self.core_missing_variants == 0 && self.core_extra_variants == 0
+    }
+
+    /// Returns true if this is an exact match down to the sub-allele level
+    pub fn is_exact_sub_match(&self) -> bool {
+        self.is_exact_core_match() && self.sub_missing_variants == 0 && self.sub_extra_variants == 0
     }
 }
 
@@ -1117,36 +1228,15 @@ fn solve_diplotype(
     // now the magic
     let diplotype_solution: DiplotypeSolution = if het_variants.is_empty() {
         // there are no heterozygous variants, so we are returning a homozygous allele
-        // first see if there are SVs that dominate all other labels
-        let mut matched: Option<String> = get_sv_haplotype_label(&base_haplotype);
-
-        if matched.is_none() {
-            // no SV label found, revert to normal matching scheme
-            for haplotype in normalized_haplotypes.iter() {
-                if haplotype.matches(&base_haplotype) {
-                    assert!(matched.is_none());
-                    matched = Some(haplotype.haplotype_name().to_string());
-                }
-            }
-        }
-
-        // if we have an exact match, return that
-        if let Some(match_name) = matched {
-            DiplotypeSolution {
-                num_missing_variants: 0,
-                num_extra_variants: 0,
-                diplotypes: vec![
-                    Diplotype::new(&match_name, &match_name)
-                ]
-            }
-        } else {
-            // no exact match, so we need to find the best inexact match for the base haplotype
-            let best_inexact = find_best_inexact_matches(normalized_haplotypes, variant_hash, &base_haplotype);
-            DiplotypeSolution {
-                num_missing_variants: best_inexact.missing_variants,
-                num_extra_variants: best_inexact.extra_variants,
-                diplotypes: best_inexact.inexact_haplotype_names.into_iter().map(|name| Diplotype::new(&name, &name)).collect()
-            }
+        // find the best inexact match for the base haplotype
+        let best_inexact = find_best_inexact_matches(normalized_haplotypes, variant_hash, &base_haplotype);
+        DiplotypeSolution {
+            core_missing_variants: best_inexact.core_missing_variants,
+            core_extra_variants: best_inexact.core_extra_variants,
+            sub_missing_variants: best_inexact.sub_missing_variants,
+            sub_extra_variants: best_inexact.sub_extra_variants,
+            main_diplotypes: best_inexact.main_haplotype_names.into_iter().map(|name| Diplotype::new(&name, &name)).collect(),
+            extended_diplotypes: best_inexact.extended_haplotypes.into_iter().map(|hap| InexactDiplotype::new(hap.clone(), hap.clone())).collect()
         }
     } else {
         // complicated path - we have heterozygous variants to resolve
@@ -1154,9 +1244,12 @@ fn solve_diplotype(
 
         // if we have 'x' hets, there are 2^(x-1) combinations due to symmetry; iterate over that combination count
         let max_combinations = 2_usize.pow(total_haplogroups as u32 - 1);
-        let mut valid_diplotypes: Vec<Diplotype> = vec![];
-        let mut best_inexact_scores = (usize::MAX, usize::MAX); // missing_variants, extra_variants
-        let mut best_inexact_diplotypes: Vec<Diplotype> = vec![];
+        // (core_missing_variants, core_extra_variants, sub_missing_variants, sub_extra_variants)
+        // if this is (0, 0, 0, 0), then we have an exact match down to the sub-allele level
+        // if this is (0, 0, x, y), then we have an exact match down to the core allele level
+        let mut best_score = (usize::MAX, usize::MAX, usize::MAX, usize::MAX);
+        let mut best_diplotypes: Vec<Diplotype> = vec![];
+        let mut best_extended_diplotypes: Vec<InexactDiplotype> = vec![];
         for combination in 0..max_combinations {
             // first resolve this combination into the two haplotypes
             let mut h1: Vec<NormalizedVariant> = base_haplotype.clone();
@@ -1216,89 +1309,51 @@ fn solve_diplotype(
             assert_eq!(combo_index, total_haplogroups);
             debug!("\t combination {} = {:?}, {:?}", combination, h1, h2);
             
-            // now compare them to see if they both match an allele
-            // general process:
-            // 1. see if the haplotype matches an SV label
-            // 2. if not, try to match it to a database haplotype
-            // 3. if no exact match, then keep the best matches as long as they are within our limits
-            // 4. if still no match, return NO_MATCH
-            let mut h1_matched: Option<String> = get_sv_haplotype_label(&h1);
-            if h1_matched.is_none() {
-                for haplotype in normalized_haplotypes.iter() {
-                    if haplotype.matches(&h1) {
-                        assert!(h1_matched.is_none());
-                        h1_matched = Some(haplotype.haplotype_name().to_string());
+            // figure out the best inexact matches for each haplotype
+            let best_h1 = find_best_inexact_matches(normalized_haplotypes, variant_hash, &h1);
+            let best_h2 = find_best_inexact_matches(normalized_haplotypes, variant_hash, &h2);
+
+            // check if this is a new best score
+            let total_score = (
+                best_h1.core_missing_variants + best_h2.core_missing_variants,
+                best_h1.core_extra_variants + best_h2.core_extra_variants,
+                best_h1.sub_missing_variants + best_h2.sub_missing_variants,
+                best_h1.sub_extra_variants + best_h2.sub_extra_variants
+            );
+            debug!("\t combination {combination} score: {total_score:?}");
+            if total_score < best_score {
+                // it is, clear out any diplotypes we have
+                best_score = total_score;
+                best_diplotypes.clear();
+                best_extended_diplotypes.clear();
+            }
+            if total_score == best_score {
+                // now add any diplotype combinations to the output
+                for h1 in best_h1.main_haplotype_names.iter() {
+                    for h2 in best_h2.main_haplotype_names.iter() {
+                        best_diplotypes.push(Diplotype::new(h1, h2));
                     }
                 }
-            }
 
-            // same logic for h2
-            let mut h2_matched: Option<String> = get_sv_haplotype_label(&h2);
-            if h2_matched.is_none() {
-                for haplotype in normalized_haplotypes.iter() {
-                    if haplotype.matches(&h2) {
-                        assert!(h2_matched.is_none());
-                        h2_matched = Some(haplotype.haplotype_name().to_string());
-                    }
-                }
-            }
-
-            if let (Some(h1_name), Some(h2_name)) = (h1_matched.as_ref(), h2_matched.as_ref()) {
-                // both matched, save this combination
-                valid_diplotypes.push(Diplotype::new(h1_name, h2_name));
-                best_inexact_scores = (0, 0); // we found an exact match, so we can stop looking for inexact matches
-            } else if best_inexact_scores != (0, 0) {
-                // we have not found an exact match yet, so we need to see if this combination is a better inexact match
-                let (best_h1_score, best_h1) = if let Some(h1_name) = h1_matched {
-                    // we have an exact match, so just return that
-                    ((0, 0), vec![h1_name])
-                } else {
-                    // we need to find the best inexact match
-                    let best_h1 = find_best_inexact_matches(normalized_haplotypes, variant_hash, &h1);
-                    ((best_h1.missing_variants, best_h1.extra_variants), best_h1.inexact_haplotype_names)
-                };
-
-                let (best_h2_score, best_h2) = if let Some(h2_name) = h2_matched {
-                    // we have an exact match, so just return that
-                    ((0, 0), vec![h2_name])
-                } else {
-                    // we need to find the best inexact match
-                    let best_h2 = find_best_inexact_matches(normalized_haplotypes, variant_hash, &h2);
-                    ((best_h2.missing_variants, best_h2.extra_variants), best_h2.inexact_haplotype_names)
-                };
-
-                // check if this is a new best score
-                let total_score = (best_h1_score.0 + best_h2_score.0, best_h1_score.1 + best_h2_score.1);
-                if total_score < best_inexact_scores {
-                    // it is, clear out any diplotypes we have
-                    best_inexact_scores = total_score;
-                    best_inexact_diplotypes.clear();
-                }
-                if total_score == best_inexact_scores {
-                    // now add any diplotype combinations to the output
-                    for h1 in best_h1.iter() {
-                        for h2 in best_h2.iter() {
-                            best_inexact_diplotypes.push(Diplotype::new(h1, h2));
-                        }
+                for h1 in best_h1.extended_haplotypes.iter() {
+                    for h2 in best_h2.extended_haplotypes.iter() {
+                        best_extended_diplotypes.push(
+                            InexactDiplotype::new(h1.clone(), h2.clone())
+                        );
+                        debug!("\t\t {}", best_extended_diplotypes.last().unwrap().basic_diplotype().diplotype());
                     }
                 }
             }
         }
 
-        if valid_diplotypes.is_empty() {
-            // no exact matching combinations were found, so return the best inexact matches
-            DiplotypeSolution {
-                num_missing_variants: best_inexact_scores.0,
-                num_extra_variants: best_inexact_scores.1,
-                diplotypes: best_inexact_diplotypes
-            }
-        } else {
-            // we found one or more exact matches
-            DiplotypeSolution {
-                num_missing_variants: 0,
-                num_extra_variants: 0,
-                diplotypes: valid_diplotypes
-            }
+        // regardless of the score, with pass through the best diplotypes
+        DiplotypeSolution {
+            core_missing_variants: best_score.0,
+            core_extra_variants: best_score.1,
+            sub_missing_variants: best_score.2,
+            sub_extra_variants: best_score.3,
+            main_diplotypes: best_diplotypes,
+            extended_diplotypes: best_extended_diplotypes
         }
     };
 
@@ -1324,9 +1379,18 @@ fn get_sv_haplotype_label(variants: &[NormalizedVariant]) -> Option<String> {
 }
 
 struct InexactMatches {
-    pub missing_variants: usize,
-    pub extra_variants: usize,
-    pub inexact_haplotype_names: Vec<String>,
+    /// The number of core missing variants
+    pub core_missing_variants: usize,
+    /// The number of core extra variants
+    pub core_extra_variants: usize,
+    /// The number of sub-allele missing variants
+    pub sub_missing_variants: usize,
+    /// The number of sub-allele extra variants
+    pub sub_extra_variants: usize,
+    /// The names of the normal haplotypes, which be just a core or sub-allele name without extras
+    pub main_haplotype_names: Vec<String>,
+    /// The names of the inexact haplotypes, which will include "+" for extra variants and "-" for missing variants
+    pub extended_haplotypes: Vec<InexactHaplotype>,
 }
 
 /// Given a list of variants that are on a haplotype, this will return the best inexact matches.
@@ -1335,27 +1399,68 @@ struct InexactMatches {
 /// * `variant_hash` - the set of variants that were identified as well as their metadata
 /// * `scored_haplotype` - the set of variants that are on the haplotype to score
 fn find_best_inexact_matches(normalized_haplotypes: &[NormalizedPgxHaplotype], variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>, scored_haplotype: &[NormalizedVariant]) -> InexactMatches {
+    // first see if the scored haplotype matches an SV haplotype
+    // this is a special case because there may be a bunch of spurious variants in addition to the core SV variant
+    if let Some(matched_name) = get_sv_haplotype_label(scored_haplotype) {
+        return InexactMatches {
+            core_missing_variants: 0,
+            core_extra_variants: 0,
+            sub_missing_variants: 0,
+            sub_extra_variants: 0,
+            main_haplotype_names: vec![matched_name.clone()],
+            extended_haplotypes: vec![
+                // TODO: do we want to return any variants here? it's not clear yet
+                InexactHaplotype::new(matched_name.clone(), Default::default())
+            ]
+        };
+    }
+
     // TODO: parameters?
     // these are per-haplotype limits
     let max_missing_variants: usize = 1; // if we are missing a lot, then it's probably not a good match; this also should be very rare
     // let max_extra_variants: Option<usize> = None; // I do not think we need this limit
 
-    let mut best_score = (max_missing_variants, usize::MAX);
+    // now the main logic, where we search for the haplotype(s) with the best score
+    // (core_missing, core_extra, sub_missing, sub_extra)
+    let mut best_score = (max_missing_variants, usize::MAX, usize::MAX, usize::MAX);
     let mut best_matches = vec![];
     for haplotype in normalized_haplotypes.iter() {
         // do not consider SV haplotypes for this
         if haplotype.is_sv() {
             continue;
         }
+        let is_core_allele = haplotype.is_core_allele();
 
-        let (mv, ev) = haplotype.quant_match(scored_haplotype);
-        match (mv.len(), ev.len()).cmp(&best_score) {
+        // get the missing and extra variants
+        let quant_match = haplotype.quant_match(scored_haplotype);
+        let mv = &quant_match.missing_variants;
+        let ev = &quant_match.extra_variants;
+
+        // count how many of each are core variants or sub-allele variants
+        let mv_core = mv.iter().filter(|v| variant_hash.get(v).unwrap().is_core_variant).count();
+        let mv_sub = mv.len() - mv_core;
+        let ev_core = ev.iter().filter(|v| variant_hash.get(v).unwrap().is_core_variant).count();
+        let ev_sub = ev.len() - ev_core;
+
+        match (mv_core, ev_core, mv_sub, ev_sub).cmp(&best_score) {
             std::cmp::Ordering::Less => {
-                best_score = (mv.len(), ev.len());
-                best_matches = vec![derive_inexact_haplotype_name(haplotype, variant_hash, &mv, &ev)];
+                best_score = (mv_core, ev_core, mv_sub, ev_sub);
+                best_matches = vec![
+                    (
+                        is_core_allele,
+                        haplotype.haplotype_name().to_string(),
+                        derive_inexact_haplotype(haplotype, variant_hash, &quant_match)
+                    )
+                ];
             }
             std::cmp::Ordering::Equal => {
-                best_matches.push(derive_inexact_haplotype_name(haplotype, variant_hash, &mv, &ev));
+                best_matches.push(
+                    (
+                        is_core_allele,
+                        haplotype.haplotype_name().to_string(),
+                        derive_inexact_haplotype(haplotype, variant_hash, &quant_match)
+                    )
+                );
             }
             std::cmp::Ordering::Greater => {
                 // do nothing
@@ -1363,10 +1468,28 @@ fn find_best_inexact_matches(normalized_haplotypes: &[NormalizedPgxHaplotype], v
         }
     }
 
+    // split our matches into core and sub-haplotypes
+    #[allow(clippy::type_complexity)]
+    let (best_core_matches, best_sub_matches): (Vec<(bool, String, InexactHaplotype)>, Vec<(bool, String, InexactHaplotype)>) 
+        = best_matches.into_iter()
+            .partition(|(is_core_allele, _, _)| *is_core_allele);
+
+    // if we have any sub-alleles, prioritize those over core alleles
+    let (best_normal_matches, best_inexact_matches): (Vec<String>, Vec<InexactHaplotype>) = if best_sub_matches.is_empty() {
+        best_core_matches.into_iter().map(|(_, m1, m2)| (m1, m2))
+            .unzip()
+    } else {
+        best_sub_matches.into_iter().map(|(_, m1, m2)| (m1, m2))
+            .unzip()
+    };
+
     InexactMatches {
-        missing_variants: best_score.0,
-        extra_variants: best_score.1,
-        inexact_haplotype_names: best_matches
+        core_missing_variants: best_score.0,
+        core_extra_variants: best_score.1,
+        sub_missing_variants: best_score.2,
+        sub_extra_variants: best_score.3,
+        main_haplotype_names: best_normal_matches,
+        extended_haplotypes: best_inexact_matches
     }
 }
 
@@ -1374,44 +1497,41 @@ fn find_best_inexact_matches(normalized_haplotypes: &[NormalizedPgxHaplotype], v
 /// # Arguments
 /// * `haplotype` - the haplotype to derive the name from
 /// * `variant_hash` - the set of variants that were identified as well as their metadata
-/// * `missing_variants` - the list of missing variants
-/// * `extra_variants` - the list of extra variants
-fn derive_inexact_haplotype_name(haplotype: &NormalizedPgxHaplotype, variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>, missing_variants: &[NormalizedVariant], extra_variants: &[NormalizedVariant]) -> String {
+/// * `quant_match` - the result of the quant match
+fn derive_inexact_haplotype(
+    haplotype: &NormalizedPgxHaplotype,
+    variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>,
+    quant_match: &QuantMatchResult
+) -> InexactHaplotype {
     // get the base name
-    let mut inexact_hap_name = haplotype.haplotype_name().to_string();
+    let inexact_hap_name = haplotype.haplotype_name().to_string();
+    let mut variant_relationships: BTreeSet<RegionVariant> = Default::default();
 
-    // subtract the missing variants
-    for mv in missing_variants.iter() {
+    // build a mega-iterator of (variant, relationship) pairs
+    let match_iter = quant_match.matching_variants.iter().zip(std::iter::repeat(VariantAlleleRelationship::Match));
+    let missing_iter = quant_match.missing_variants.iter().zip(std::iter::repeat(VariantAlleleRelationship::Missing));
+    let extra_iter = quant_match.extra_variants.iter().zip(std::iter::repeat(VariantAlleleRelationship::Unexpected));
+    let iter = match_iter.chain(missing_iter).chain(extra_iter);
+
+    // iterate through the pairs and add them to the variant relationships
+    for (variant, relationship) in iter {
         // try to get the variant name from the metadata
-        let mut variant_name = match variant_hash.get(mv) {
-            Some(metadata) => metadata.name.clone(),
-            None => String::default()
+        let (mut variant_name, is_core_variant) = match variant_hash.get(variant) {
+            Some(metadata) => (metadata.name.clone(), metadata.is_core_variant),
+            None => (String::default(), true)
         };
         // if we don't have one or it's empty, then use the standard form name
         if variant_name.is_empty() {
-            variant_name = mv.variant_name();
+            variant_name = variant.variant_name();
         }
-        inexact_hap_name.push_str(&format!(" -{variant_name}"));
+        variant_relationships.insert(RegionVariant::new(
+            variant_name, is_core_variant, relationship
+        ));
     }
 
-    // add the extra variants
-    for ev in extra_variants.iter() {
-        // try to get the variant name from the metadata
-        let mut variant_name = match variant_hash.get(ev) {
-            Some(metadata) => metadata.name.clone(),
-            None => String::default()
-        };
-        // if we don't have one or it's empty, then use the standard form name
-        if variant_name.is_empty() {
-            variant_name = ev.variant_name();
-        }
-        inexact_hap_name.push_str(&format!(" +{variant_name}"));
-    }
-    if missing_variants.is_empty() && extra_variants.is_empty() {
-        inexact_hap_name
-    } else {
-        format!("({inexact_hap_name})")
-    }
+    InexactHaplotype::new(
+        inexact_hap_name, variant_relationships
+    )
 }
 
 #[cfg(test)]
@@ -1421,8 +1541,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::data_types::coordinates::Coordinates;
-    use crate::data_types::gene_definition::GeneDefinition;
-    use crate::data_types::pgx_structural_variants::{FullDeletion, PartialDeletion};
+    use crate::database::gene_definition::GeneDefinition;
+    use crate::database::pgx_structural_variants::{FullDeletion, PartialDeletion};
     use crate::util::file_io::load_json;
 
     fn load_test_reference() -> ReferenceGenome {
@@ -1447,9 +1567,9 @@ mod tests {
 
         // check the variants
         let v1 = NormalizedVariant::new("chr1".to_string(), 201091992, "G", "A", None).unwrap();
-        let v1_meta = VariantMeta { variant_id: 777260, name: "c.520C>T".to_string(), dbsnp_id: Some("rs772226819".to_string()) };
+        let v1_meta = VariantMeta { variant_id: 777260, name: "c.520C>T".to_string(), dbsnp_id: Some("rs772226819".to_string()), is_core_variant: true };
         let v2 = NormalizedVariant::new("chr1".to_string(), 201060814, "C", "T", None).unwrap();
-        let v2_meta = VariantMeta { variant_id: 777261, name: "c.3257G>A".to_string(), dbsnp_id: Some("rs1800559".to_string()) };
+        let v2_meta = VariantMeta { variant_id: 777261, name: "c.3257G>A".to_string(), dbsnp_id: Some("rs1800559".to_string()), is_core_variant: true };
         let expected_variants = BTreeMap::from_iter(vec![
             (v1.clone(), v1_meta),
             (v2.clone(), v2_meta)
@@ -1458,10 +1578,10 @@ mod tests {
 
         // check the haplotypes
         assert_eq!(normalized_haplotypes.len(), 3);
-        let h1 = NormalizedPgxHaplotype::new("Reference".to_string());
-        let mut h2 = NormalizedPgxHaplotype::new("c.3257G>A".to_string());
+        let h1 = NormalizedPgxHaplotype::new("Reference".to_string(), None);
+        let mut h2 = NormalizedPgxHaplotype::new("c.3257G>A".to_string(), None);
         h2.add_variant(vec![Some(v2)]);
-        let mut h3 = NormalizedPgxHaplotype::new("c.520C>T".to_string());
+        let mut h3 = NormalizedPgxHaplotype::new("c.520C>T".to_string(), None);
         h3.add_variant(vec![Some(v1)]);
         let expected_haplotypes = vec![h1, h2, h3];
         assert_eq!(normalized_haplotypes, expected_haplotypes);
@@ -1586,12 +1706,29 @@ mod tests {
         // the double hom call is a NO_MATCH; but we should get a homozygous inexact call here
         let diplotypes = diplotype.gene_details();
         assert_eq!(diplotypes.len(), 1);
-        println!("Diplotypes: {:?}", diplotypes.get("CACNA1S").unwrap().diplotypes());
         let result = diplotypes.get("CACNA1S").unwrap();
         assert_eq!(*result.diplotypes(), vec![Diplotype::new("NO_MATCH", "NO_MATCH")]);
         assert_eq!(*result.inexact_diplotypes().unwrap(), vec![
-            Diplotype::new("(c.3257G>A +c.520C>T)", "(c.3257G>A +c.520C>T)"),
-            Diplotype::new("(c.520C>T +c.3257G>A)", "(c.520C>T +c.3257G>A)")
+            InexactDiplotype::new(
+                InexactHaplotype::new("c.3257G>A".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ])),
+                InexactHaplotype::new("c.3257G>A".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ]))
+            ),
+            InexactDiplotype::new(
+                InexactHaplotype::new("c.520C>T".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ])),
+                InexactHaplotype::new("c.520C>T".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ]))
+            )
         ]);
     }
 
@@ -1611,12 +1748,27 @@ mod tests {
         // the het+hom call is a NO_MATCH; but we should get a heterozygous inexact call here
         let diplotypes = diplotype.gene_details();
         assert_eq!(diplotypes.len(), 1);
-        println!("Diplotypes: {:?}", diplotypes.get("CACNA1S").unwrap().diplotypes());
         let result = diplotypes.get("CACNA1S").unwrap();
         assert_eq!(*result.diplotypes(), vec![Diplotype::new("NO_MATCH", "NO_MATCH")]);
         assert_eq!(*result.inexact_diplotypes().unwrap(), vec![
-            Diplotype::new("c.520C>T", "(c.3257G>A +c.520C>T)"),
-            Diplotype::new("c.520C>T", "(c.520C>T +c.3257G>A)")
+            InexactDiplotype::new(
+                InexactHaplotype::new("c.520C>T".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Match)
+                ])),
+                InexactHaplotype::new("c.3257G>A".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ]))
+            ),
+            InexactDiplotype::new(
+                InexactHaplotype::new("c.520C>T".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Match)
+                ])),
+                InexactHaplotype::new("c.520C>T".to_string(), BTreeSet::from([
+                    RegionVariant::new("c.520C>T".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("c.3257G>A".to_string(), true, VariantAlleleRelationship::Unexpected)
+                ]))
+            )
         ]);
     }
 
@@ -1808,6 +1960,104 @@ mod tests {
         ]);
     }
 
+    #[test]
+    fn test_suballele_match() {
+        // load the database
+        let database_fn: PathBuf = PathBuf::from("test_data/CYP2C8-faux/database.json");
+        let database: PgxDatabase = load_json(&database_fn).unwrap();
+        let reference_genome = load_test_reference();
+
+        // this VCF has an exact sub-allele match
+        let vcf_fn = PathBuf::from("./test_data/CYP2C8-faux/suballele_match.vcf.gz");
+        let diplotype = call_diplotypes(&database, Some(&vcf_fn), Some(&reference_genome), &[], &create_dummy_cli()).unwrap();
+
+        // this example has *2.001/*2.002 exactly with no extras
+        let diplotypes = diplotype.gene_details();
+        assert_eq!(diplotypes.len(), 1);
+        let result = diplotypes.get("CYP2C8").unwrap();
+        assert_eq!(result.diplotypes(), vec![Diplotype::new("*2.001", "*2.002")]);
+        assert_eq!(result.simple_diplotypes(), vec![Diplotype::new("*2", "*2")]);
+        assert_eq!(result.dedup_simple_diplotypes(), vec![Diplotype::new("*2", "*2")]);
+        assert_eq!(result.inexact_diplotypes(), None);
+    }
+
+    #[test]
+    fn test_core_match() {
+        // load the database
+        let database_fn: PathBuf = PathBuf::from("test_data/CYP2C8-faux/database.json");
+        let database: PgxDatabase = load_json(&database_fn).unwrap();
+        let reference_genome = load_test_reference();
+
+        // this VCF has a core match, but the sub-allele does not exist
+        let vcf_fn = PathBuf::from("./test_data/CYP2C8-faux/core_match.vcf.gz");
+        let diplotype = call_diplotypes(&database, Some(&vcf_fn), Some(&reference_genome), &[], &create_dummy_cli()).unwrap();
+
+        // this example includes an extra sub-allele variant, so we have inexact diplotypes
+        let diplotypes = diplotype.gene_details();
+        assert_eq!(diplotypes.len(), 1);
+        let result = diplotypes.get("CYP2C8").unwrap();
+        assert_eq!(result.diplotypes(), vec![Diplotype::new("*2", "*2"), Diplotype::new("*2", "*2")]); // both alleles resolve to *2, even though an extra exists
+        assert_eq!(result.simple_diplotypes(), vec![Diplotype::new("*2", "*2"), Diplotype::new("*2", "*2")]); // even though one allele resolves, both are reduced to core
+        assert_eq!(result.dedup_simple_diplotypes(), vec![Diplotype::new("*2", "*2")]);
+        assert_eq!(result.inexact_diplotypes().unwrap(), vec![
+            InexactDiplotype::new(
+                InexactHaplotype::new("*2.001".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match),
+                ])),
+                InexactHaplotype::new("*2.002".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("sub-3".to_string(), false, VariantAlleleRelationship::Match),
+                    RegionVariant::new("sub-4".to_string(), false, VariantAlleleRelationship::Unexpected)
+                ]))
+            ),
+            InexactDiplotype::new(
+                InexactHaplotype::new("*2.001".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match)
+                ])),
+                InexactHaplotype::new("*2.003".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("sub-3".to_string(), false, VariantAlleleRelationship::Unexpected),
+                    RegionVariant::new("sub-4".to_string(), false, VariantAlleleRelationship::Match)
+                ]))
+            )
+        ]);
+    }
+
+    #[test]
+    fn test_inexact_match() {
+        // load the database
+        let database_fn: PathBuf = PathBuf::from("test_data/CYP2C8-faux/database.json");
+        let database: PgxDatabase = load_json(&database_fn).unwrap();
+        let reference_genome = load_test_reference();
+
+        // this VCF has a core mismatch and a matching sub-allele on the other
+        let vcf_fn = PathBuf::from("./test_data/CYP2C8-faux/inexact_match.vcf.gz");
+        let diplotype = call_diplotypes(&database, Some(&vcf_fn), Some(&reference_genome), &[], &create_dummy_cli()).unwrap();
+
+        // this example includes an extra sub-allele variant, so we have inexact diplotypes
+        let diplotypes = diplotype.gene_details();
+        assert_eq!(diplotypes.len(), 1);
+        let result = diplotypes.get("CYP2C8").unwrap();
+        assert_eq!(result.diplotypes(), vec![Diplotype::new("NO_MATCH", "NO_MATCH")]); // both alleles resolve to *2, even though an extra exists
+        assert_eq!(result.simple_diplotypes(), vec![Diplotype::new("NO_MATCH", "NO_MATCH")]); // even though one allele resolves, both are reduced to core
+        assert_eq!(result.dedup_simple_diplotypes(), vec![Diplotype::new("NO_MATCH", "NO_MATCH")]);
+        assert_eq!(result.inexact_diplotypes().unwrap(), vec![
+            // this is an interesting case because at the CORE level, it could be *2+extra or *3+extra
+            // but because of the sub-alleles, the best match is restricted to *2.002+extra
+            // IMO, this is working as intended and will keep it like this unless we get some complaints
+            InexactDiplotype::new(
+                InexactHaplotype::new("*2.001".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match)
+                ])),
+                InexactHaplotype::new("*2.002".to_string(), BTreeSet::from([
+                    RegionVariant::new("core-1".to_string(), true, VariantAlleleRelationship::Match),
+                    RegionVariant::new("core-2".to_string(), true, VariantAlleleRelationship::Unexpected),
+                    RegionVariant::new("sub-3".to_string(), false, VariantAlleleRelationship::Match)
+                ]))
+            )
+        ]);
+    }
+
     // test when we don't provide a VCF, we should get no calls
     // we prevent this in the CLI, but worth checking that we don't crash
     #[test]
@@ -1981,5 +2231,27 @@ mod tests {
         assert_eq!("generic_partial", is_deletion(&gene_collection, &structural_variants, 100, 150).unwrap().unwrap()); // partial without specifics
         assert_eq!("specific_partial", is_deletion(&gene_collection, &structural_variants, 125, 200).unwrap().unwrap()); // defined single-gene partial
         assert_eq!("multigene_partial", is_deletion(&gene_collection, &structural_variants, 25, 125).unwrap().unwrap()); // defined multi-gene partial
+    }
+
+    #[test]
+    fn test_simplify_diplotypes() {
+        // build some diplotypes
+        let diplotypes = vec![
+            Diplotype::new("*1.002", "*2.001"),
+            Diplotype::new("*2.001", "*3.001"),
+            Diplotype::new("*3.001", "*4.001"),
+        ];
+        let core_allele_lookup: BTreeMap<String, String> = BTreeMap::from([
+            ("*1.002".to_string(), "*1".to_string()),
+            ("*2.001".to_string(), "*2".to_string()),
+            ("*3.001".to_string(), "*3".to_string()),
+            ("*4.001".to_string(), "*4".to_string()),
+        ]);
+        let simplified_diplotypes = simplify_diplotypes(&diplotypes, &core_allele_lookup).unwrap();
+        assert_eq!(simplified_diplotypes, vec![
+            Diplotype::new("*1", "*2"),
+            Diplotype::new("*2", "*3"),
+            Diplotype::new("*3", "*4"),
+        ]);
     }
 }

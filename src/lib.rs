@@ -5,6 +5,8 @@ pub mod build_database;
 pub mod cli;
 /// Contains all functionality for identifying and calling CYP2D6 diplotypes
 pub mod cyp2d6;
+/// Contains functionality for constructing or using our database file
+pub mod database;
 /// Contains any specialized data types that are shared across the tooling
 pub mod data_types;
 /// Contains functionality for displaying database statistics

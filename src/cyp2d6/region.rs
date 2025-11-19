@@ -2,7 +2,7 @@
 use std::fmt::Display;
 
 use crate::cyp2d6::region_label::Cyp2d6RegionLabel;
-use crate::cyp2d6::region_variants::{Cyp2d6RegionVariant, VariantAlleleRelationship};
+use crate::data_types::region_variants::{RegionVariant, VariantAlleleRelationship};
 
 /// Detail level for reporting an allelic region
 #[derive(Clone, Copy,PartialEq)]
@@ -21,12 +21,12 @@ pub struct Cyp2d6Region {
     /// The high-level identifier for the sequence
     label: Cyp2d6RegionLabel,
     /// The specific variants that were identified, usually only for CYP2D6 derivatives
-    variants: Option<Vec<Cyp2d6RegionVariant>>
+    variants: Option<Vec<RegionVariant>>
 }
 
 impl Cyp2d6Region {
     /// Constructor
-    pub fn new(label: Cyp2d6RegionLabel, variants: Option<Vec<Cyp2d6RegionVariant>>) -> Self {
+    pub fn new(label: Cyp2d6RegionLabel, variants: Option<Vec<RegionVariant>>) -> Self {
         // TODO: do we want to enforce checks here?
         Self {
             unique_id: None,
@@ -97,7 +97,7 @@ impl Cyp2d6Region {
         &self.label
     }
 
-    pub fn variants(&self) -> Option<&[Cyp2d6RegionVariant]> {
+    pub fn variants(&self) -> Option<&[RegionVariant]> {
         self.variants.as_deref()
     }
 }

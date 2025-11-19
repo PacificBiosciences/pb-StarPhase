@@ -1,6 +1,6 @@
 [package]
 name = "pbstarphase"
-version = "1.5.0"
+version = "2.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -30,7 +30,7 @@ rustc-hash = "1.1.0"
 rust-lib-reference-genome = { tag = "v0.2.0", git = "https://github.com/holtjma/rust-lib-reference-genome.git" }
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.105"
-simple-error = "0.3.0"
+simple-error = "0.3.2"
 statrs = "0.16.0"
 strum = "0.26.2"
 strum_macros = "0.26.2"
