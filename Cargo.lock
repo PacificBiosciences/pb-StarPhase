@@ -1344,7 +1344,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pbstarphase"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "assert_approx_eq",
  "bio",
@@ -1369,7 +1369,7 @@ dependencies = [
  "semver 1.0.26",
  "serde",
  "serde_json",
- "simple-error 0.3.1",
+ "simple-error 0.3.2",
  "statrs",
  "strum 0.26.2",
  "strum_macros 0.26.4",
@@ -1673,7 +1673,7 @@ dependencies = [
  "flate2",
  "log",
  "rustc-hash",
- "simple-error 0.3.1",
+ "simple-error 0.3.2",
 ]
 
 [[package]]
@@ -1854,9 +1854,9 @@ checksum = "cc47a29ce97772ca5c927f75bac34866b16d64e07f330c3248e2d7226623901b"
 
 [[package]]
 name = "simple-error"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e2accd2c41a0e920d2abd91b2badcfa1da784662f54fbc47e0e3a51f1e2e1cf"
+checksum = "69da7c8ef9e55986dcaa55dd095bbf7d321e80cc91644f25ce26a83dbe9e7f14"
 
 [[package]]
 name = "slab"
@@ -2253,7 +2253,7 @@ dependencies = [
  "priority-queue",
  "rand",
  "rustc-hash",
- "simple-error 0.3.1",
+ "simple-error 0.3.2",
 ]
 
 [[package]]

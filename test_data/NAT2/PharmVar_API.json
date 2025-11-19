@@ -90,5 +90,98 @@
         "url": "https://www.pharmvar.org/haplotype/PV02414",
         "hgvs": "NG_012246.1:g.[14162C>G;14349G>A;14562G>A]",
         "variantGroups": []
+    },
+    {
+        "geneSymbol": "NAT2",
+        "alleleName": "NAT2*36.001",
+        "pvId": "PV02492",
+        "legacyLabel": "NAT2*6P",
+        "coreAllele": "NAT2*36",
+        "evidenceLevel": "D",
+        "description": null,
+        "function": "decreased function",
+        "activeInd": true,
+        "references": [
+            {
+                "citation": "Patin et al. 2006",
+                "url": "http://www.ncbi.nlm.nih.gov/pubmed/16786516"
+            },
+            {
+                "citation": "deposited by Papanikolaou & PharmVar Team 2024",
+                "url": null
+            },
+            {
+                "citation": "deposited by PharmVar Team 2025",
+                "url": null
+            },
+            {
+            "citation": "Swart et al. 2020",
+            "url": "http://www.ncbi.nlm.nih.gov/pubmed/33392048"
+            }
+        ],
+        "variants": [
+            {
+                "referenceSequence": "NC_000008.11",
+                "referenceLocation": "Sequence Start",
+                "referenceCollections": [
+                    "GRCh38"
+                ],
+                "hgvs": "NC_000008.11:g.18400593G>A",
+                "rsId": "rs1799930",
+                "impact": "R197Q",
+                "variantFrequency": [
+                    {
+                        "source": "GnomAD",
+                        "frequency": 0.287784
+                    }
+                ],
+                "url": "https://www.pharmvar.org/variant/18888",
+                "variantId": "2692",
+                "position": "NC_000008.11:g.18400593N>A"
+            },
+            {
+                "referenceSequence": "NC_000008.11",
+                "referenceLocation": "Sequence Start",
+                "referenceCollections": [
+                    "GRCh38"
+                ],
+                "hgvs": "NC_000008.11:g.18400406C>G",
+                "rsId": "rs12720065",
+                "impact": "L135V",
+                "variantFrequency": [
+                    {
+                        "source": "GnomAD",
+                        "frequency": 0.000666835
+                    }
+                ],
+                "url": "https://www.pharmvar.org/variant/18822",
+                "variantId": "2681",
+                "position": "NC_000008.11:g.18400406N>G"
+            },
+            {
+                "referenceSequence": "NC_000008.11",
+                "referenceLocation": "Sequence Start",
+                "referenceCollections": [
+                    "GRCh38"
+                ],
+                "hgvs": "NC_000008.11:g.18400806G>A",
+                "rsId": "rs1208",
+                "impact": "R268K",
+                "variantFrequency": [
+                    {
+                        "source": "GnomAD",
+                        "frequency": 0.592134
+                    }
+                ],
+                "url": "https://www.pharmvar.org/variant/18960",
+                "variantId": "2704",
+                "position": "NC_000008.11:g.18400806N>A"
+            }
+        ],
+        "alleleType": "Sub",
+        "url": "https://www.pharmvar.org/haplotype/PV02492",
+        "hgvs": "NG_012246.1:g.[14162C>G;14349G>A;14562G>A]",
+        "variantGroups": [],
+        "activityScore": null
     }
 ]

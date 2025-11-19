@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 use crate::data_types::alleles::VariantDefinition;
-use crate::data_types::database::PgxDatabase;
+use crate::database::pgx_database::PgxDatabase;
 
 /// Prints the statistics for a given database
 /// # Arguments
@@ -25,7 +25,7 @@ pub fn print_stats(database: &PgxDatabase) {
 
     println!("Database gene statistics:");
     let total_genes = gene_entries.len() + hla_config.gene_collection().gene_dict().len() + 1;
-    println!("\tTotal genes: {} = {} (gene entries) + {} (HLA) + 1 (CYP2D6)", total_genes, gene_entries.len(), hla_config.gene_collection().gene_dict().len());
+    println!("\tTotal genes: {} = {} (variant-based genes) + {} (HLA) + 1 (CYP2D6)", total_genes, gene_entries.len(), hla_config.gene_collection().gene_dict().len());
     println!("\tGene entries:");
     println!("\t\tTotal alleles: {}", gene_entries.values().map(|g| g.defined_haplotypes().len()).sum::<usize>());
     println!("\t\tTotal variants: {}", gene_entries.values().map(|g| g.variants().len()).sum::<usize>());
@@ -42,11 +42,21 @@ pub fn print_stats(database: &PgxDatabase) {
     if log::log_enabled!(log::Level::Debug) {
         println!();
         println!("Gene entry statistics:");
-        println!("gene\talleles\tvariants\tdata_source");
+        println!("gene\tcore_alleles\tsub_alleles\tcore_variants\tsub_variants\tdata_source");
         for (gene, gene_entry) in gene_entries.iter() {
-            let alleles = gene_entry.defined_haplotypes().len();
-            let variants = gene_entry.variants().len();
-            println!("{}\t{}\t{}\t{}", gene, alleles, variants, gene_entry.data_source());
+            let core_alleles = gene_entry.defined_haplotypes().iter()
+                .filter(|(_, h)| h.is_core_haplotype())
+                .count();
+            let sub_alleles = gene_entry.defined_haplotypes().iter()
+                .filter(|(_, h)| !h.is_core_haplotype()).count();
+            let core_variants = gene_entry.variants().iter()
+                .filter(|(_, v)| v.is_core_variant())
+                .count();
+            let sub_variants = gene_entry.variants().iter()
+                .filter(|(_, v)| !v.is_core_variant())
+                .count();
+            let data_source = gene_entry.data_source();
+            println!("{gene}\t{core_alleles}\t{sub_alleles}\t{core_variants}\t{sub_variants}\t{data_source}");
         }
         println!();
 

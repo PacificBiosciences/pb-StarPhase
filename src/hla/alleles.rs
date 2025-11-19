@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli::core::FULL_VERSION;
 use crate::data_types::coordinates::Coordinates;
-use crate::data_types::gene_definition::{GeneCollection, GeneDefinition};
 use crate::data_types::mapping::MappingStats;
+use crate::database::gene_definition::{GeneCollection, GeneDefinition};
 use crate::util::mapping::standard_hifi_aligner;
 
 lazy_static! {

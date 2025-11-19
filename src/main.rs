@@ -9,8 +9,10 @@ use pbstarphase::cli::diplotype::{DiplotypeSettings, check_diplotype_settings};
 use pbstarphase::cli::core::{Commands, get_cli};
 use pbstarphase::cli::db_build::{BuildSettings, check_build_settings};
 use pbstarphase::cli::db_stat::{DbStatSettings, check_db_stat_settings};
-use pbstarphase::data_types::database::PgxDatabase;
-use pbstarphase::data_types::pgx_diplotypes::{PgxDiplotypes, Diplotype};
+use pbstarphase::data_types::pgx_diplotype::Diplotype;
+use pbstarphase::data_types::starphase_json::StarphaseJson;
+use pbstarphase::database::pgx_database::PgxDatabase;
+use pbstarphase::database::db_config::{DatabaseBuildOptions};
 use pbstarphase::util::file_io::{load_json, save_json};
 
 /// This will run the "build" mode of the tool
@@ -34,6 +36,20 @@ fn run_build(settings: BuildSettings) {
     // okay, now we can check all the other settings
     let cli_settings: BuildSettings = check_build_settings(settings);
 
+    // now create our build options, this should also be fast and likely never fail
+    let build_options: DatabaseBuildOptions = if let Some(bo_filename) = cli_settings.build_options.as_ref() {
+        match load_json(bo_filename) {
+            Ok(bo) => bo,
+            Err(e) => {
+                error!("Error while loading database build options: {e}");
+                std::process::exit(exitcode::IOERR);
+            }
+        }
+    } else {
+        DatabaseBuildOptions::default()
+    };
+    info!("Build options: {build_options:#?}");
+
     // pre-load the reference genome also
     info!("Loading reference genome from {:?}...", cli_settings.reference_filename);
     let reference_genome: ReferenceGenome = match ReferenceGenome::from_fasta(&cli_settings.reference_filename) {
@@ -45,7 +61,10 @@ fn run_build(settings: BuildSettings) {
     };
 
     // all the work
-    let pgx_db: PgxDatabase = match pbstarphase::build_database::build_database_via_api(&reference_genome) {
+    let pgx_db: PgxDatabase = match pbstarphase::build_database::build_database_via_api(
+        &build_options,
+        &reference_genome
+    ) {
         Ok(pdb) => pdb,
         Err(e) => {
             error!("Error while building StarPhase database: {e}");
@@ -131,7 +150,7 @@ fn run_diplotype(settings: DiplotypeSettings) {
     };
 
     // now hand it to the diplotype caller
-    let diplotypes: PgxDiplotypes = match pbstarphase::diplotyper::call_diplotypes(
+    let diplotypes: StarphaseJson = match pbstarphase::diplotyper::call_diplotypes(
         &database,
         cli_settings.vcf_filename.as_deref(),
         Some(&reference_genome),
@@ -182,7 +201,7 @@ struct PharmCatRow {
 /// * `filename` - the output filename, TSV
 /// # Errors
 /// * if we have any errors opening or writing to the file
-fn save_pharmcat_tsv(diplotypes: &PgxDiplotypes, filename: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn save_pharmcat_tsv(diplotypes: &StarphaseJson, filename: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // modify the delimiter to "," if it ends with .csv
     let delimiter: u8 = b'\t';
     let mut csv_writer: csv::Writer<File> = csv::WriterBuilder::new()
@@ -192,7 +211,7 @@ fn save_pharmcat_tsv(diplotypes: &PgxDiplotypes, filename: &Path) -> Result<(), 
     // make sure we go through the blocks in order
     for (gene, details) in diplotypes.gene_details().iter() {
         // check if we have one result or multiple
-        let diplotypes = details.simple_diplotypes();
+        let diplotypes = details.dedup_simple_diplotypes();
         let diplotype_dt: Diplotype = if diplotypes.len() > 1 {
             Diplotype::new("Multiple", "Multiple")
         } else {

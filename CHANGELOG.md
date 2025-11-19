@@ -1,3 +1,27 @@
+# v2.0.0
+## Changes
+- Database construction (`pbstarphase build`) has been updated to support sub-allele definitions from PharmVar
+  - Variants and alleles are now annotated as either being "core" or "sub" types
+  - By default, database construction prefers gene entries from PharmVar. _DPYD_ is the notable exception, where entries are pulled from CPIC.
+  - There is now an optional database configuration file that can alter the default build behavior, see [Database Configuration](./data/README.md#database-configuration) for more details.
+- StarPhase now includes support for reporting sub-alleles in variant-based genes from PharmVar
+  - If matching sub-alleles can be found for *both* haplotypes, then they will be reported in the `diplotypes` field of the output JSON
+  - If instead matching core alleles can be found for *both* haplotypes, then the core alleles will be reported in the `diplotypes` field of the output JSON 
+  - Otherwise, `NO_MATCH` will be reported for the `diplotype`, indicating that one or both alleles do not match a defined core allele
+  - If an exact sub-allele cannot be identified, then `inexact_diplotypes` will contain information on the closest matching allele combinations. This factors in both core and sub-allele variation, prioritizing core alleles first.
+  - If a core allele definition exactly matches a sub-allele definition (e.g., "*2" = "*2.001"), then the sub-allele will be preferentially output.
+  - The `simple_diplotypes` field is always reported as core alleles when a match is identified
+  - The PharmCAT TSV file will only contain core alleles in the output. In the event of ambiguity restricted to the sub-allele (e.g., "*2.001/*2.004" and "*2.002/*2.003" are equally valid), the single unique core allele is still reported (e.g., "*2/*2").
+- Added 6 DPYD structural variants to the default database build
+- Released a new version of the database: `data/v2.0.0/pbstarphase_20251106.json.gz`
+  - This new version includes sub-alleles from PharmVar for 12 variant-based genes, see [pbstarphase_20251106.db_stat.txt](./data/v2.0.0/pbstarphase_20251106.db_stat.txt) for details
+  - If an older version of the StarPhase database is provided, all defined alleles and variants are assumed to be core alleles and variants
+- Added VCF output for CYP2D6 variants when using the `--output-debug` option (`cyp2d6_alleles.vcf.gz`). Each full CYP2D6 allele is reported as a sample in this file, and all non-reference variants that were genotyped are reported.
+- The `inexact_diplotypes` field in the JSON output has been refactored to include more parsable variant information, see [User Guide](./docs/user_guide.md#output-call-file) for more details.
+
+## Fixed
+- Fixed some minor typos and ambiguity in the db-stat outputs
+
 # v1.5.0
 ## Changes
 - Adds a new field to the output json, `inexact_diplotypes`. This field is intended to capture information about inexact allele matches. The behavior of this output depends on the gene:

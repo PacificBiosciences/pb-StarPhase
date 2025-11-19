@@ -1,0 +1,6 @@
+{
+    "default_gene_source": "PharmVar",
+    "gene_source_overrides": {
+        "DPYD": "CPIC"
+    }
+}

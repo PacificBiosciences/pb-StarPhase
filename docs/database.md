@@ -28,6 +28,17 @@ Additionally, this command relies on upstream databases maintaining a known stru
 If that structure changes, this command may fail and require an update to the software to resolve it.
 If you encounter and issue with building the database, please open an issue on GitHub so we can investigate it.
 
+## Database configuration
+For some genes, there are entries across multiple databases with the greatest overlap between CPIC and PharmVar.
+By default, StarPhase will prefer sourcing genes from PharmVar because the database tracks deeper sub-allele information.
+The one exception to this default rule is _DPYD_, where StarPhase will prefer the CPIC entries for downstream compatibility with tools like PharmCAT.
+These preferences can be overridden by providing a database configuration with the `--build-options` (or `-b`) flag when running `pbstarphase build`.
+We provide the current default database configuration in [default_db_config.json](../data/default_db_config.json).
+
+Options for configuration:
+* `default_gene_source` (string): Sets the default data source for genes present in both CPIC and PharmVar. Can be `"CPIC"` or `"PharmVar"`. Default is `"PharmVar"`.
+* `gene_source_overrides` (object): A map of gene names to their preferred data source (`"CPIC"` or `"PharmVar"`). These overrides take precedence over the `default_gene_source` setting for the specified genes. For example, `{"DPYD": "CPIC"}` forces _DPYD_ to use CPIC data regardless of the `default_gene_source` setting.
+
 ## Database statistics
 StarPhase includes a `db-stat` function, which will provide high-level summary information about the contents of a provided database JSON file.
 Additional per-gene statistics can be output with the `-v` flag.

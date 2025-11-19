@@ -10,7 +10,7 @@ use waffle_con::multi_consensus::MultiConsensus;
 use crate::cyp2d6::region::Cyp2d6Region;
 use crate::cyp2d6::region_label::Cyp2d6RegionType;
 use crate::data_types::coordinates::Coordinates;
-use crate::data_types::database::PgxDatabase;
+use crate::database::pgx_database::PgxDatabase;
 use crate::util::mapping::standard_hifi_aligner;
 use crate::visualization::igv_session_writer::{BUFFER_LEN, CONTIG_POSTFIX};
 

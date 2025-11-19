@@ -5,16 +5,17 @@ use log::{debug, info, trace, warn};
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::FxHashMap as HashMap;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::io::Read;
 use simple_error::bail;
 
 use crate::data_types::alleles::{AlleleDefinition, VariantDefinition};
-use crate::data_types::cpic_api_results::CpicAlleleDefinition;
-use crate::data_types::database::PgxDatabase;
-use crate::data_types::db_const::PHARMVAR_IGNORED_GENES;
-use crate::data_types::pharmvar_api_results::{PharmvarGeneDefinition, PharmvarAlleleDefinition};
+use crate::database::cpic_api_results::CpicAlleleDefinition;
+use crate::database::pgx_database::PgxDatabase;
+use crate::database::db_config::DatabaseBuildOptions;
+use crate::database::db_const::PHARMVAR_IGNORED_GENES;
+use crate::database::pharmvar_api_results::{PharmvarGeneDefinition, PharmvarAlleleDefinition};
 use crate::hla::alleles::{HlaAlleleDefinition, SUPPORTED_HLA_GENES};
 
 // CPIC API quickstart: https://github.com/cpicpgx/cpic-data/wiki
@@ -44,17 +45,19 @@ const PHARMVAR_API_URL: &str = "https://www.pharmvar.org/api-service";
 /// # Errors
 /// * if there are errors retrieving the CPIC gene list
 /// * if there are errors retrieving allele definitions for a gene
-pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
+pub fn build_database_via_api(build_options: &DatabaseBuildOptions, reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
     // first get all the CPI genes
     info!("Starting CPIC API queries...");
-    let all_genes: HashMap<String, String> = get_all_cpic_genes()?;
-    info!("\tCPIC gene list: {:?}", all_genes.keys().sorted().collect::<Vec<_>>());
 
     // If testing, you can limit this to a particular gene
     let query_limit = None; //Some("CACNA1S");
 
     // get the alleles for the gene
     let cpic_alleles: Vec<CpicAlleleDefinition> = query_gene_cpic_api(query_limit)?;
+    let cpic_gene_list: BTreeSet<String> = cpic_alleles.iter()
+        .map(|a| a.gene_symbol.clone())
+        .collect();
+    info!("\tCPIC gene list: {cpic_gene_list:?}");
     info!("CPIC API queries complete.");
 
     // now handle the PharmVar genes
@@ -62,7 +65,8 @@ pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     let pharmvar_genes = get_all_pharmvar_genes()?;
     info!("\tFull PharmVar gene list: {pharmvar_genes:?}");
     let filtered_pharmvar_genes: Vec<String> = pharmvar_genes.into_iter()
-        .filter(|g| !all_genes.contains_key(g) && !PHARMVAR_IGNORED_GENES.contains(g.as_str())) // remove anything from CPIC and CYP2D6 (handled separate)
+        // remove anything we do not support or handle separately
+        .filter(|g| !PHARMVAR_IGNORED_GENES.contains(g.as_str()))
         .sorted()
         .collect();
     info!("\tFiltered PharmVar gene list: {filtered_pharmvar_genes:?}");
@@ -84,7 +88,7 @@ pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     // now build our database and ship it back
     // let opt_refseq_fn = Some(std::path::PathBuf::from("./GRCh38_latest_genomic.gff.gz"));
     let full_database: PgxDatabase = PgxDatabase::new(
-        &all_genes, 
+        build_options,
         &cpic_alleles,
         &pharmvar_alleles,
         latest_hla_version,
@@ -98,56 +102,6 @@ pub fn build_database_via_api(reference_genome: &ReferenceGenome) -> Result<PgxD
     // todo!("remove query filters and remove opt_refseq_fn");
 
     Ok(full_database)
-}
-
-/// This pulls the list of genes that are available from CPIC and stores useful metadata like chromosome
-/// # Errors
-/// * if the URL request has issues connecting or converting to JSON
-/// * if duplicate gene names are detected while parsing
-/// * if required entries are missing or fail to parse
-fn get_all_cpic_genes() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-    // this endpoint gets the list of genes, ordered by symbol, where the URL field is not empty
-    //   this tends to correlate with genes that have allele definitions
-    //   if we ever find that does not hold, we can remove the url= filter component and just accept extra queries downstream
-    let gene_url: String = format!("{CPIC_API_URL}/gene?url=not.eq.null&order=symbol");
-    info!("\tQuerying CPIC gene list via {gene_url}");
-
-    // hit the end point so we can parse it
-    let result: String = reqwest::blocking::get(gene_url)?.text()?;
-    debug!("Response received.");
-    
-    // now parse it via serde
-    // we are using a generic Value here because we really just need one field right now
-    let parsed: Vec<serde_json::Value> = serde_json::from_str(&result)?;
-    debug!("Parsing complete.");
-    
-    // now pull out the chromosome for each gene we care about
-    let mut ret: HashMap<String, String> = Default::default();
-    for gene_entry in parsed.iter() {
-        // make sure we get a gene name and a chromosome
-        let gene_name: String = match gene_entry["symbol"].as_str() {
-            Some(s) => s.to_string(),
-            None => bail!("Error while parsing field \"symbol\" as a string")
-        };
-        let chromosome: String = match gene_entry["chr"].as_str() {
-            Some(s) => s.to_string(),
-            None => {
-                warn!("Error while parsing field \"chr\" for {gene_name}, ignoring: {:?}", gene_entry["chr"]);
-                continue;
-            }
-        };
-
-        // the clippy warning here is far less readable IMO, disabling it
-        #[allow(clippy::map_entry)]
-        if ret.contains_key(&gene_name) {
-            bail!("Detected duplicate gene name during parsing: {gene_name}");
-        } else {
-            debug!("\t\t{gene_name} -> {chromosome}");
-            ret.insert(gene_name, chromosome);
-        }
-    }
-    
-    Ok(ret)
 }
 
 /// This will pull all the CPIC allele definitions via a single API query.
@@ -404,7 +358,7 @@ fn query_gene_pharmvar_api(gene_list: &[String]) -> Result<Vec<PharmvarAlleleDef
         // example URL: https://www.pharmvar.org/api-service/genes/NAT2?exclude-sub-alleles=false&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38
         // TODO: if we do not specify the gene, it pulls the whole DB in one query; is that better?
         // TODO: we have exclude-sub-alleles=true, which excludes sub-alleles
-        let definition_url = format!("{PHARMVAR_API_URL}/genes/{gene}?exclude-sub-alleles=true&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38");
+        let definition_url = format!("{PHARMVAR_API_URL}/genes/{gene}?exclude-sub-alleles=false&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38");
         info!("\tQuerying \"{gene}\" via {definition_url}");
 
         // hit the end point so we can parse it
@@ -416,6 +370,9 @@ fn query_gene_pharmvar_api(gene_list: &[String]) -> Result<Vec<PharmvarAlleleDef
         debug!("Parsing complete.");
 
         ret.extend(parsed.alleles.iter().cloned());
+
+        // pharmvar requests max of 2 hits per second
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
     Ok(ret)
 }
@@ -605,17 +562,6 @@ fn load_vcf_from_bytes(vcf_content: &[u8]) -> Result<Vec<VariantDefinition>, Box
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn test_get_all_cpic_genes() {
-        let all_genes: HashMap<String, String> = get_all_cpic_genes().unwrap();
-
-        // this list can change, but presumably things will not get removed
-        assert!(all_genes.len() >= 24);
-
-        // check a gene
-        assert_eq!(all_genes.get("CACNA1S").unwrap(), "chr1");
-    }
 
     #[test]
     fn test_get_latest_hla_tag() {
@@ -666,7 +612,10 @@ mod tests {
         let current = "current";
         let (version, cyp2d6_db) = get_pharmvar_variants("CYP2D6", current).unwrap();
 
-        let current_version = semver::Version::parse(&version).unwrap();
+        // we need to handle a non-standard semver, such as 6.2.17.1 (the extra .1 is not semver)
+        let semver_version = version.split('.').take(3).join(".");
+
+        let current_version = semver::Version::parse(&semver_version).unwrap();
         assert!(fixed_after_version.matches(&current_version));
         assert!(cyp2d6_db.len() >= 510); // we got 511 when we did the FASTA based, may need to resolve that in the future
 

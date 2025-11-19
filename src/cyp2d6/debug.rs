@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::cyp2d6::caller::convert_chain_to_hap;
 use crate::cyp2d6::region::{Cyp2d6DetailLevel, Cyp2d6Region};
-use crate::cyp2d6::region_variants::Cyp2d6RegionVariant;
+use crate::data_types::region_variants::RegionVariant;
 
 /// Primary object that gets converted into JSON
 #[derive(Serialize)]
@@ -15,7 +15,7 @@ pub struct DeeplotypeDebug {
     /// hap2 various complete forms
     hap2: HeeplotypeDebug,
     /// allelic details
-    alleles: BTreeMap<String, Vec<Cyp2d6RegionVariant>>
+    alleles: BTreeMap<String, Vec<RegionVariant>>
 }
 
 impl DeeplotypeDebug {
@@ -26,7 +26,7 @@ impl DeeplotypeDebug {
         let hap1 = HeeplotypeDebug::new(&best_diplotype_indices[0], hap_regions, cyp_translate);
         let hap2 = HeeplotypeDebug::new(&best_diplotype_indices[1], hap_regions, cyp_translate);
 
-        let mut alleles: BTreeMap<String, Vec<Cyp2d6RegionVariant>> = Default::default();
+        let mut alleles: BTreeMap<String, Vec<RegionVariant>> = Default::default();
         for region in hap_regions.iter() {
             if let Some(variants) = region.variants() {
                 // this region has defined variants, so lets add it to the debug outputs

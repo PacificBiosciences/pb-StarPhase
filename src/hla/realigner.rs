@@ -9,9 +9,9 @@ use std::path::Path;
 use tempfile::NamedTempFile;
 
 use crate::data_types::coordinates::Coordinates;
-use crate::data_types::database::PgxDatabase;
 use crate::data_types::mapping::MappingStats;
-use crate::data_types::pgx_diplotypes::PgxMappingDetails;
+use crate::data_types::starphase_json::PgxMappingDetails;
+use crate::database::pgx_database::PgxDatabase;
 use crate::hla::debug::ReadMappingStats;
 use crate::hla::mapping::HlaMappingStats;
 use crate::util::file_io::save_fasta;

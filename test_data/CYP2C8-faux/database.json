@@ -1,0 +1,99 @@
+{
+  "database_metadata": {
+    "pbstarphase_version": "0.1.0-9ac34a4",
+    "cpic_version": "API-2023-09-05T14:03:45.314899420Z",
+    "build_time": "2023-09-05T14:03:45.314899420Z",
+    "hla_version" : "fake_version",
+    "pharmvar_version" : "fake_version"
+  },
+  "gene_entries": {
+    "CYP2C8": {
+      "gene_name": "CYP2C8",
+      "chromosome": "chr3",
+      "variants": {
+        "1": {
+          "name" : "core-1",
+          "dbsnp_id": "rs1",
+          "position": 2,
+          "alleles": [
+            "C",
+            "T"
+          ],
+          "is_core_variant": true
+        },
+        "2": {
+          "name" : "core-2",
+          "dbsnp_id": "rs2",
+          "position": 3,
+          "alleles": [
+            "G",
+            "T"
+          ],
+          "is_core_variant": true
+        },
+        "3": {
+          "name" : "sub-3",
+          "dbsnp_id": "rs3",
+          "position": 4,
+          "alleles": [
+            "T",
+            "A"
+          ],
+          "is_core_variant": false
+        },
+        "4": {
+          "name" : "sub-4",
+          "dbsnp_id": "rs4",
+          "position": 5,
+          "alleles": [
+            "A",
+            "T"
+          ],
+          "is_core_variant": false
+        }
+      },
+      "defined_haplotypes": {
+        "*2": {
+          "is_core_haplotype": true,
+          "core_allele": null,
+          "haplotype": {
+            "1": "T"
+          }
+        },
+        "*2.001": {
+          "is_core_haplotype": false,
+          "core_allele": "*2",
+          "haplotype": {
+            "1": "T"
+          }
+        },
+        "*2.002": {
+          "is_core_haplotype": false,
+          "core_allele": "*2",
+          "haplotype": {
+            "1": "T",
+            "3": "A"
+          }
+        },
+        "*2.003": {
+          "is_core_haplotype": false,
+          "core_allele": "*2",
+          "haplotype": {
+            "1": "T",
+            "4": "T"
+          }
+        },
+        "*3": {
+          "is_core_haplotype": true,
+          "core_allele": null,
+          "haplotype": {
+            "2": "T"
+          }
+        }
+      },
+      "reference_allele": "*1"
+    }
+  },
+  "hla_sequences" : {},
+  "cyp2d6_gene_def" : {}
+}
