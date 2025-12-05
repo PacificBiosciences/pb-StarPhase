@@ -11,7 +11,7 @@ Last updated: v2.0.0
 ## CPIC and PharmVar
 The database build can be configured to accept either CPIC or PharmVar as the upstream data source.
 We recommend reviewing using `pbstarphase db-stat` to determine the upstream database for a given database.
-See [pbstarphase_20251030.db_stat.txt](../data/v2.0.0/pbstarphase_20251030.db_stat.txt) for an example of the gene lists sourced from CPIC or PharmVar.
+See [pbstarphase_20251106.db_stat.txt](../data/v2.0.0/pbstarphase_20251106.db_stat.txt) for an example of the gene lists sourced from CPIC or PharmVar.
 
 ## PharmVar only
 CYP2D6
