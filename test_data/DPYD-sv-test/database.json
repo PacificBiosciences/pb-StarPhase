@@ -1,0 +1,65 @@
+{
+  "database_metadata": {
+    "pbstarphase_version": "0.1.0-9ac34a4",
+    "cpic_version": "API-2023-09-05T14:03:45.314899420Z",
+    "build_time": "2023-09-05T14:03:45.314899420Z",
+    "hla_version" : "fake_version",
+    "pharmvar_version" : "fake_version"
+  },
+  "gene_collection": {
+    "version": "NCBI RefSeq GCF_000001405.40-RS_2024_08",
+    "gene_dict": {
+      "DPYD": {
+        "gene_name": "DPYD",
+        "coordinates": {
+          "chrom": "chr1",
+          "start": 10,
+          "end": 40
+        },
+        "is_forward_strand": true,
+        "transcript_id": "NM_000110.4",
+        "exons": [
+          {
+            "chrom": "chr1",
+            "start": 10,
+            "end": 20
+          },
+          {
+            "chrom": "chr1",
+            "start": 30,
+            "end": 40
+          }
+        ]
+      }
+    }
+  },
+  "gene_entries": {
+    "DPYD": {
+      "gene_name": "DPYD",
+      "chromosome": "chr1",
+      "variants": {},
+      "structural_variants": {
+        "full_gene_deletions": {},
+        "partial_gene_deletions": {
+          "generic exon del": {
+            "is_generic": true,
+            "exons_deleted": {
+              "DPYD": {
+                "start": 0,
+                "end": 2
+              }
+            }
+          }
+        }
+      },
+      "defined_haplotypes": {
+        "*1": {
+          "haplotype": {}
+        }
+      },
+      "reference_allele": "*1"
+    }
+  },
+  "hla_sequences" : {},
+  "cyp2d6_gene_def" : {}
+}

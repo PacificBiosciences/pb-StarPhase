@@ -1,3 +1,11 @@
+# v2.0.1
+## Changes
+- Added a new parameter (`--max-sv-length`) that controls the maximum structural variant length that is considered, default: 1 Mbp
+
+## Fixed
+- Fixed a naming error when multiple deletions are detected in a gene
+- Reduced memory usage of the chaining step by only tracking the best pairs of chains instead of all of them
+
 # v2.0.0
 ## Changes
 - Database construction (`pbstarphase build`) has been updated to support sub-allele definitions from PharmVar
