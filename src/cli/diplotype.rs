@@ -92,6 +92,13 @@ pub struct DiplotypeSettings {
     #[clap(help_heading = Some("HLA calling"))]
     pub disable_cdna_scoring: bool,
 
+    /// The maximum length of an SV to consider, anything longer is ignored
+    #[clap(long = "max-sv-length")]
+    #[clap(value_name = "BASEPAIRS")]
+    #[clap(default_value = "1000000")]
+    #[clap(help_heading = Some("Variant parameters"))]
+    pub max_sv_length: usize,
+
     /// Requires HLA alleles to have a DNA sequence definition
     #[clap(long = "hla-require-dna")]
     #[clap(help_heading = Some("HLA calling"))]
@@ -256,6 +263,11 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
     }
     if let Some(debug_folder) = settings.debug_folder.as_ref() {
         debug!("\tDebug folder: {debug_folder:?}");
+    }
+
+    if settings.sv_vcf_filename.is_some() {
+        info!("SV parameters:");
+        info!("\tMaximum SV length: {}", settings.max_sv_length);
     }
 
     // miscellaneous settings

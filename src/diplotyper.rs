@@ -1,5 +1,4 @@
 
-use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use rust_htslib::bcf;
 use rust_htslib::bcf::Read;
@@ -94,7 +93,7 @@ pub fn call_diplotypes(
             let core_allele_lookup = build_core_allele_lookup(&normalized_haplotypes, opt_structural_variants)?;
 
             // make sure we have variants, otherwise we can't do anything
-            if variant_hash.is_empty() {
+            if variant_hash.is_empty() && opt_structural_variants.is_none() {
                 warn!("No variants found for {gene_name}, returning default reference allele.");
                 let reference_name: &str = gene_entry.reference_allele().unwrap_or("NO_REFERENCE_ALLELE");
                 let all_ref_diplotype = Diplotype::new(reference_name, reference_name);
@@ -117,7 +116,11 @@ pub fn call_diplotypes(
 
             // if we have an SV VCF, load variants for it also
             let sv_vcf_variants: BTreeMap<NormalizedVariant, NormalizedGenotype> = if let Some(sv_vcf) = cli_settings.sv_vcf_filename.as_deref() {
-                load_sv_vcf_variants(sv_vcf, &sample_name, opt_structural_variants, database.gene_collection())?
+                load_sv_vcf_variants(
+                    sv_vcf, &sample_name,
+                    opt_structural_variants, database.gene_collection(),
+                    cli_settings.max_sv_length
+                )?
             } else {
                 Default::default()
             };
@@ -730,10 +733,13 @@ fn load_vcf_variants(vcf_fn: &Path, sample_name: &str, variant_hash: &BTreeMap<N
 /// If one is found, the haplotype is return with a NormalizedGenotype.
 /// # Arguments
 /// * `vcf_fn` - The VCF file to look through
-/// * `sample_name` - the name of the sample to load variants for
 /// * `opt_structural_variants` - Optional structure variants to look for; if None (most PGx genes), this function returns empty results
-fn load_sv_vcf_variants(vcf_fn: &Path, sample_name: &str, opt_structural_variants: Option<&PgxStructuralVariants>, gene_collection: &GeneCollection) 
-    -> Result<BTreeMap<NormalizedVariant, NormalizedGenotype>, Box<dyn std::error::Error>> {
+/// * `gene_collection` - The gene collection to use for the search
+/// * `max_sv_length` - The maximum length of an SV to consider, anything longer is ignored
+fn load_sv_vcf_variants(
+    vcf_fn: &Path, sample_name: &str, opt_structural_variants: Option<&PgxStructuralVariants>,
+    gene_collection: &GeneCollection, max_sv_length: usize
+) -> Result<BTreeMap<NormalizedVariant, NormalizedGenotype>, Box<dyn std::error::Error>> {
     // if there are no SVs noted, then there is nothing to search for here
     let structural_variants = match opt_structural_variants {
         Some(sv) => sv,
@@ -810,6 +816,10 @@ fn load_sv_vcf_variants(vcf_fn: &Path, sample_name: &str, opt_structural_variant
                 // pos return 0-based, end should 0-based exclusive
                 let start: u64 = record.pos().try_into()?;
                 let end: u64 = get_sv_end(&record)?.try_into()?;
+                let sv_length = (end - start) as usize;
+                if sv_length > max_sv_length {
+                    continue;
+                }
 
                 // now check if this matches a defined deletion
                 let opt_sv_id = is_deletion(gene_collection, structural_variants, start, end)?;
@@ -1364,17 +1374,17 @@ fn solve_diplotype(
 /// If none are found, then None is returned.
 /// # Arguments
 /// * `variants` - the set of variants to comb through
-fn get_sv_haplotype_label(variants: &[NormalizedVariant]) -> Option<String> {
-    let sv_labels: Vec<&str> = variants.iter()
+fn get_sv_haplotype_label(variants: &[NormalizedVariant]) -> Option<Vec<String>> {
+    let sv_labels: Vec<String> = variants.iter()
         .filter_map(|v| {
-            v.sv_stats().map(|stats| stats.haplotype_label())
+            v.sv_stats().map(|stats| stats.haplotype_label().to_string())
         })
         .collect();
 
     if sv_labels.is_empty() {
         None
     } else {
-        Some(sv_labels.iter().join(" + "))
+        Some(sv_labels)
     }
 }
 
@@ -1401,16 +1411,21 @@ struct InexactMatches {
 fn find_best_inexact_matches(normalized_haplotypes: &[NormalizedPgxHaplotype], variant_hash: &BTreeMap<NormalizedVariant, VariantMeta>, scored_haplotype: &[NormalizedVariant]) -> InexactMatches {
     // first see if the scored haplotype matches an SV haplotype
     // this is a special case because there may be a bunch of spurious variants in addition to the core SV variant
-    if let Some(matched_name) = get_sv_haplotype_label(scored_haplotype) {
+    if let Some(matched_names) = get_sv_haplotype_label(scored_haplotype) {
+        let first_match = matched_names.first().unwrap().clone();
+        // TODO: this might fail if we have 3+ "generic" deletions; we can figure that out if it happens
+        let variant_relationships: BTreeSet<RegionVariant> = matched_names.iter().skip(1)
+            .map(|s| RegionVariant::new(s.clone(), true, VariantAlleleRelationship::Unexpected))
+            .collect();
         return InexactMatches {
             core_missing_variants: 0,
-            core_extra_variants: 0,
+            core_extra_variants: variant_relationships.len(),
             sub_missing_variants: 0,
             sub_extra_variants: 0,
-            main_haplotype_names: vec![matched_name.clone()],
+            main_haplotype_names: vec![first_match.clone()],
             extended_haplotypes: vec![
                 // TODO: do we want to return any variants here? it's not clear yet
-                InexactHaplotype::new(matched_name.clone(), Default::default())
+                InexactHaplotype::new(first_match, variant_relationships)
             ]
         };
     }
@@ -1551,7 +1566,9 @@ mod tests {
     }
 
     fn create_dummy_cli() -> DiplotypeSettings {
-        Default::default()
+        let mut cli: DiplotypeSettings = Default::default();
+        cli.max_sv_length = 1000000;
+        cli
     }
 
     /// mainly test that the database values loaded matches expectations, CACNA1S is a relatively simple starter
@@ -2253,5 +2270,36 @@ mod tests {
             Diplotype::new("*2", "*3"),
             Diplotype::new("*3", "*4"),
         ]);
+    }
+
+    #[test]
+    fn test_multiple_sv_haplotypes() {
+        // load the real database
+        let database_fn = PathBuf::from("./test_data/DPYD-sv-test/database.json");
+        let database: PgxDatabase = load_json(&database_fn).unwrap();
+
+        let opt_vcf_fn = Some(PathBuf::from("./test_data/DPYD-sv-test/empty_small.vcf.gz"));
+        let reference_genome = load_test_reference();
+        let bam_fns = [];
+        let mut cli_settings = create_dummy_cli();
+        cli_settings.sv_vcf_filename = Some(PathBuf::from("./test_data/DPYD-sv-test/multi_del.vcf.gz"));
+        let diplotypes = call_diplotypes(
+            &database, opt_vcf_fn.as_deref(), Some(&reference_genome), &bam_fns, &cli_settings
+        ).unwrap();
+
+        // we should get just 1 here, with one on each half
+        assert_eq!(diplotypes.gene_details().get("DPYD").unwrap().diplotypes().len(), 1);
+        assert_eq!(diplotypes.gene_details().get("DPYD").unwrap().diplotypes()[0].diplotype(), "generic exon del/generic exon del");
+
+        // try one that is homozygous also
+        cli_settings.sv_vcf_filename = Some(PathBuf::from("./test_data/DPYD-sv-test/hom_del.vcf.gz"));
+        let diplotypes = call_diplotypes(
+            &database, opt_vcf_fn.as_deref(), Some(&reference_genome), &bam_fns, &cli_settings
+        ).unwrap();
+        assert_eq!(diplotypes.gene_details().get("DPYD").unwrap().diplotypes().len(), 1);
+        let main_diplotype = &diplotypes.gene_details().get("DPYD").unwrap().diplotypes()[0];
+        assert_eq!(main_diplotype.diplotype(), "NO_MATCH/NO_MATCH");
+        let inexact_diplotypes = &diplotypes.gene_details().get("DPYD").unwrap().inexact_diplotypes().unwrap()[0];
+        assert_eq!(inexact_diplotypes.basic_diplotype().diplotype(), "generic exon del/(generic exon del +generic exon del)");
     }
 }

@@ -1,7 +1,7 @@
 
 use log::{debug, log_enabled, trace};
 use simple_error::bail;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BinaryHeap};
 use waffle_con::multi_consensus::MultiConsensus;
 
 use crate::cyp2d6::caller::convert_chain_to_hap;
@@ -184,10 +184,28 @@ impl ChainScore {
         )
     }
 
-    /// Simplified compare function now.
-    fn compare(&self, other: &ChainScore) -> std::cmp::Ordering {
-        // all of them are within the boundaries, so just return whichever has the best cumulative score
-        self.primary_score().partial_cmp(&other.primary_score()).unwrap()
+    /// Generates the comparison tuple for this ChainScore, which is just cost followed by the chain indices
+    fn compare_tuple(&self) -> (f64, usize, usize) {
+        (self.primary_score(), self.chain_index1, self.chain_index2)
+    }
+}
+
+impl Ord for ChainScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.compare_tuple().partial_cmp(&other.compare_tuple()).unwrap()
+    }
+}
+
+impl PartialOrd for ChainScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for ChainScore {}
+impl PartialEq for ChainScore {
+    fn eq(&self, other: &Self) -> bool {
+        self.compare_tuple() == other.compare_tuple()
     }
 }
 
@@ -377,34 +395,22 @@ pub fn find_best_chain_pair(
         return Err(Box::new(CallerError::NoChainsFound));
     }
 
-    debug!("Possible chains (N={}):", possible_chains.len());
+    debug!("Found {} possible chains.", possible_chains.len());
     for chain in possible_chains.iter() {
-        debug!("\t{chain:?}");
+        trace!("\t{chain:?}");
     }
 
-    trace!("Multiple chain pairs detected, scoring them:");
-    let mut score_sets: Vec<ChainScore> = vec![];
+    // let mut score_sets: Vec<ChainScore> = vec![];
+    let max_heap_size = 10;
+    let mut score_sets: BinaryHeap<ChainScore> = BinaryHeap::with_capacity(max_heap_size+1);
+
     // figure out the best by what is explained
+    debug!("Scoring chain pairs, tracking top {}...", max_heap_size);
     for i in 0..possible_chains.len() {
+        let mut hyper_skipped = 0;
+        let mut num_skipped = 0;
+        let mut num_added = 0;
         for j in i..possible_chains.len() {
-            let mut read_combined_ed: usize = 0;
-            let mut hap_weights = vec![0.0; hap_labels.len()];
-
-            for (_qname, chain_weights) in chain_scores.iter() {
-                let (score, chain_match) = containment_score(&possible_chains[i], &possible_chains[j], chain_weights);
-                // squared for RMS calculation - saturating is really only necessary for unit tests
-                read_combined_ed = read_combined_ed.saturating_add(score);
-                
-                // divide support between the matches
-                let split_frac = 1.0 / chain_match.len() as f64;
-                for (chain_offset, &con_index) in chain_match.iter()
-                    .flat_map(|chain| chain.iter().enumerate()) { // convert each chain into offset + consensus index iterator
-                    // the split fraction scales the chain weight for this part of the read (chain_offset) when compared to the given consensus index
-                    // then we select the overlap fraction which is the second value
-                    hap_weights[con_index] += split_frac * chain_weights[chain_offset][con_index].1;
-                }
-            }
-
             // at this point we have the hap weights assigned, now divide by the allele counts
             let mut hap_counts = vec![0; hap_labels.len()];
             for &con_index in possible_chains[i].iter().chain(possible_chains[j].iter()) {
@@ -412,27 +418,10 @@ pub fn find_best_chain_pair(
             }
             
             // this applies a penalty factor for each deviation from 1.0 copies
-            let allele_expected_penalty: f64 = penalties.lasso_penalty * hap_labels.iter().zip(hap_counts.iter())
-                .filter_map(|(label, hc)| {
-                    if label.is_allowed_label() && // make sure the label is allowed
-                        (ignore_chain_label_limits || // if we are ignoring label (usually debug only) OR
-                            label.is_normalizing_allele(normalize_all_alleles) || // if the allele is for normalizing OR
-                            label.is_reported_allele() // the allele is going to appear in the output
-                        ) {
-                        if *hc > 0 {
-                            Some((*hc - 1) as f64) // we are expecting 1 copy, so add the delta
-                        } else {
-                            // this is an allowed allele, but we do not have any copies in our hap_count, so ignore it
-                            // we used to count this as Some(1.0), indicating that an allele was expected but is missing
-                            // now, we just let the edit penalty handle it
-                            None
-                        }
-                    } else {
-                        // this is not an allowed label, and we are not using it in normalization
-                        None
-                    }
-                })
-                .sum::<f64>();
+            let unexpected_alleles = count_unexpected_alleles(
+                &hap_labels, &hap_counts, ignore_chain_label_limits, normalize_all_alleles
+            );
+            let allele_expected_penalty: f64 = penalties.lasso_penalty * (unexpected_alleles as f64);
 
             // count the number of chains that we cannot exactly find in this diplotype
             let mut unmet_observations = 0;
@@ -449,58 +438,6 @@ pub fn find_best_chain_pair(
                     unmet_observations += 1;
                 }
             }
-
-            let edit_distance = read_combined_ed as u64;
-            let ln_ed_penalty = (read_combined_ed as f64) * penalties.ln_ed_penalty;
-            
-            // now the multinomial calculation
-            let mut reduced_alleles: Vec<usize> = vec![];
-            let mut reduced_counts: Vec<i32> = vec![];
-            let mut reduced_coverage: Vec<u64> = vec![];
-
-            // one loop to populate all these vecs
-            for (hap_index, hl) in hap_labels.iter().enumerate() {
-                let hap_count = hap_counts[hap_index];
-                if hap_count > 0 && (ignore_chain_label_limits || hl.is_normalizing_allele(normalize_all_alleles)) {
-                    reduced_alleles.push(hap_index);
-                    reduced_counts.push(hap_count);
-                    let hap_weight = hap_weights[hap_index].round() as u64;
-                    reduced_coverage.push(hap_weight);
-                }
-            }
-
-            // now normalize the probabilities to 1.0
-            let total_hap_count: i32 = reduced_counts.iter().sum();
-            let reduced_probs: Vec<f64> = reduced_counts.into_iter()
-                .map(|c| (c as f64) / (total_hap_count as f64))
-                .collect();
-
-            let mn_llh_penalty = if reduced_probs.is_empty() || reduced_coverage.iter().sum::<u64>() == 0 {
-                // this happens when we have a haplotype with no actual D6 alleles, it's not a valid result usually
-                // check for exception
-                if !normalize_all_alleles &&
-                    possible_chains[i].iter().any(|&hap1| hap_labels[hap1].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) &&
-                    possible_chains[j].iter().any(|&hap2| hap_labels[hap2].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) {
-                    // normalizing by *5 is disabled AND *5 is in hap1 AND *5 is in hap2
-                    // combined with having no normalized coverage, this is a *5/*5 result, which is valid
-                    // no penalty from the likelihood here
-                    0.0
-                } else {
-                    // did not match an exception, invalid result
-                    continue;
-                }
-            } else {
-                // standard path, we have coverage on *something*
-                assert_eq!(reduced_probs.len(), reduced_coverage.len());
-            
-                /*
-                // turns out Multinomial is not using all ln format under the hood so it overflows, we need a custom one
-                let total_coverage: u64 = reduced_coverage.iter().sum();
-                let multinomial = Multinomial::new(&reduced_probs, total_coverage)?;
-                let mn_llh_penalty = -multinomial.ln_pmf(&reduced_coverage);
-                */
-                multinomial_ln_pmf(&reduced_probs, &reduced_coverage).abs()
-            };
             
             // check if we have any unexpected chain pairs at the CYP2D level
             let expectation_mismatch = if ignore_chain_label_limits { 0 } 
@@ -509,49 +446,99 @@ pub fn find_best_chain_pair(
 
             // count up the number of edges that are from inferrence
             let num_inferred_edges = if infer_connections {
-                let mut count = 0;
-                for chain in [&possible_chains[i], &possible_chains[j]] {
-                    for window in chain.windows(2) {
-                        let h1 = window[0];
-                        let h2 = window[1];
-                        if inferred_possible[h1][h2] {
-                            count += 1;
-                        }
-                    }
-                }
-                count
+                count_inferred_edges(
+                    &possible_chains[i], &possible_chains[j], &inferred_possible
+                )
             } else {
                 0
             };
             let inferred_chain_penalty = (num_inferred_edges as f64) * penalties.inferred_edge_penalty;
-            
-            // trace!("\t{:?} {:?} => {:?} + {} + {} + {} => {:?}", possible_chains[i], possible_chains[j], combined_explained, allele_delta_penalty, allele_expected_penalty, full_chain_penalty, allele_counts);
-            score_sets.push(ChainScore {
-                allele_expected_penalty,
-                unmet_observations,
-                edit_distance,
-                ln_ed_penalty,
-                mn_llh_penalty,
-                unexpected_chain_penalty,
-                inferred_chain_penalty,
-                reduced_alleles,
-                reduced_probs,
-                reduced_coverage,
-                chain_index1: i,
-                chain_index2: j,
-            });
+
+            // we have the easy calculations done, check if we can skip the expensive calculations
+            // expensive in this case is doing read-level comparisons and multinomial calculations
+            let partial_cost = allele_expected_penalty + unexpected_chain_penalty + inferred_chain_penalty;
+            if score_sets.len() >= max_heap_size &&
+                partial_cost >= score_sets.peek().map(|s| s.primary_score()).unwrap_or(f64::MAX) {
+                // the heaps is saturated AND
+                // the partial cost is greater than or equal to the top of the heap, which means it can never be better
+                hyper_skipped += 1;
+            } else {
+                // calculate the edit distance and hap weights for the read, which is expensive
+                // we only want to do this if it looks like a promising chain pair
+                let mut read_combined_ed: usize = 0;
+                let mut hap_weights = vec![0.0; hap_labels.len()];
+                for (_qname, chain_weights) in chain_scores.iter() {
+                    let (score, chain_match) = containment_score(&possible_chains[i], &possible_chains[j], chain_weights);
+                    // squared for RMS calculation - saturating is really only necessary for unit tests
+                    read_combined_ed = read_combined_ed.saturating_add(score);
+
+                    // divide support between the matches
+                    let split_frac = 1.0 / chain_match.len() as f64;
+                    for (chain_offset, &con_index) in chain_match.iter()
+                        .flat_map(|chain| chain.iter().enumerate()) { // convert each chain into offset + consensus index iterator
+                        // the split fraction scales the chain weight for this part of the read (chain_offset) when compared to the given consensus index
+                        // then we select the overlap fraction which is the second value
+                        hap_weights[con_index] += split_frac * chain_weights[chain_offset][con_index].1;
+                    }
+                }
+                let edit_distance = read_combined_ed as u64;
+                let ln_ed_penalty = (read_combined_ed as f64) * penalties.ln_ed_penalty;
+
+                // calculate the multinomial score, which is expensive
+                let opt_mn_llh_scores = get_multinomial_score(
+                    &hap_labels, &hap_counts, &hap_weights,
+                    ignore_chain_label_limits, normalize_all_alleles,
+                    &possible_chains[i], &possible_chains[j]);
+                if opt_mn_llh_scores.is_none() {
+                    // this is not a valid result, so we skip it
+                    num_skipped += 1;
+                    continue;
+                }
+                let (mn_llh_penalty, reduced_alleles, reduced_probs, reduced_coverage) = opt_mn_llh_scores.unwrap();
+
+                // trace!("\t{:?} {:?} => {:?} + {} + {} + {} => {:?}", possible_chains[i], possible_chains[j], combined_explained, allele_delta_penalty, allele_expected_penalty, full_chain_penalty, allele_counts);
+                let chain_score = ChainScore {
+                    allele_expected_penalty,
+                    unmet_observations,
+                    edit_distance,
+                    ln_ed_penalty,
+                    mn_llh_penalty,
+                    unexpected_chain_penalty,
+                    inferred_chain_penalty,
+                    reduced_alleles,
+                    reduced_probs,
+                    reduced_coverage,
+                    chain_index1: i,
+                    chain_index2: j,
+                };
+
+                if score_sets.len() < max_heap_size || chain_score.primary_score() < score_sets.peek().unwrap().primary_score() {
+                    num_added += 1;
+                    score_sets.push(chain_score);
+                } else {
+                    num_skipped += 1;
+                }
+
+                // the heap is max-heap, so the worst will be at the top
+                if score_sets.len() > max_heap_size {
+                    score_sets.pop();
+                }
+            }
+        }
+
+        if i % 1000 == 0 {
+            debug!("Iteration {i}: hyper_skipped {hyper_skipped}, skipped {num_skipped}, added {num_added}, heap top: {}", score_sets.peek().unwrap().primary_score());
+        } else {
+            trace!("Iteration {i}: hyper_skipped {hyper_skipped}, skipped {num_skipped}, added {num_added}, heap top: {}", score_sets.peek().unwrap().primary_score());
         }
     }
 
-    score_sets.sort_by(|a, b| {
-        // check if the combined explanations are "close enough" for equality
-        // TODO: now that we have a unified score, we could probably convert this into proper compare with PartialCmp and Cmp; low priority
-        a.compare(b)
-    });
-    score_sets.reverse();
+    let mut score_sets: Vec<ChainScore> = score_sets.into_sorted_vec();
+    assert!(score_sets.is_sorted());
+    score_sets.reverse(); // we want the best at the end
 
     if log_enabled!(log::Level::Debug) {
-        let num_shown = 50;
+        let num_shown = max_heap_size;
         debug!("Scored chain pairs (best {num_shown}):");
         let skip_count = if score_sets.len() > num_shown { score_sets.len() - num_shown } else { 0 };
         for chain_score in score_sets.iter().skip(skip_count) {
@@ -794,6 +781,125 @@ fn unexpected_count(chain: &[usize], hap_labels: &[Cyp2d6RegionLabel], cyp2d6_co
 /// * `needle` - the sub-slice to search for in the haystack
 fn is_sub<T: PartialEq>(haystack: &[T], needle: &[T]) -> bool {
     haystack.windows(needle.len()).any(|c| c == needle)
+}
+
+/// This will count the number of unexpected alleles in a given chain.
+/// # Arguments
+/// * `hap_labels` - the labels for each haplotype
+/// * `hap_counts` - the counts for each haplotype
+/// * `ignore_chain_label_limits` - whether to ignore chain label limits
+/// * `normalize_all_alleles` - whether to normalize all alleles
+/// # Returns
+/// The number of unexpected alleles
+fn count_unexpected_alleles(
+    hap_labels: &[Cyp2d6RegionLabel], hap_counts: &[i32],
+    ignore_chain_label_limits: bool, normalize_all_alleles: bool
+) -> i32 {
+    hap_labels.iter().zip(hap_counts.iter())
+        .filter_map(|(label, hc)| {
+            if label.is_allowed_label() && // make sure the label is allowed
+                (ignore_chain_label_limits || // if we are ignoring label (usually debug only) OR
+                    label.is_normalizing_allele(normalize_all_alleles) || // if the allele is for normalizing OR
+                    label.is_reported_allele() // the allele is going to appear in the output
+                ) {
+                if *hc > 0 {
+                    Some(*hc - 1) // we are expecting 1 copy, so add the delta
+                } else {
+                    // this is an allowed allele, but we do not have any copies in our hap_count, so ignore it
+                    // we used to count this as Some(1.0), indicating that an allele was expected but is missing
+                    // now, we just let the edit penalty handle it
+                    None
+                }
+            } else {
+                // this is not an allowed label, and we are not using it in normalization
+                None
+            }
+        })
+        .sum::<i32>()
+}
+
+/// This will count the number of inferred edges in a given chain pair.
+/// # Arguments
+/// * `i_chain` - the first chain
+/// * `j_chain` - the second chain
+/// * `inferred_connections` - the inferred connections
+/// # Returns
+/// The number of inferred edges
+fn count_inferred_edges(i_chain: &[usize], j_chain: &[usize], inferred_connections: &[Vec<bool>]) -> u32 {
+    let mut count = 0;
+    for chain in [i_chain, j_chain] {
+        for window in chain.windows(2) {
+            let h1 = window[0];
+            let h2 = window[1];
+            if inferred_connections[h1][h2] {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+/// This will calculate the multinomial score for a given chain pair.
+/// # Arguments
+/// * `hap_labels` - the labels for each haplotype
+/// * `hap_counts` - the counts for each haplotype
+/// * `hap_weights` - the weights for each haplotype
+/// * `ignore_chain_label_limits` - whether to ignore chain label limits
+/// * `normalize_all_alleles` - whether to normalize all alleles
+/// * `i_chain` - the first chain
+/// * `j_chain` - the second chain
+/// # Returns
+/// The multinomial score if it is valid, otherwise None
+#[allow(clippy::type_complexity)]
+fn get_multinomial_score(
+    hap_labels: &[Cyp2d6RegionLabel], hap_counts: &[i32], hap_weights: &[f64],
+    ignore_chain_label_limits: bool, normalize_all_alleles: bool,
+    i_chain: &[usize], j_chain: &[usize]
+) -> Option<(f64, Vec<usize>, Vec<f64>, Vec<u64>)> {
+    // now the multinomial calculation, which depends on the expensive calc above
+    let mut reduced_alleles: Vec<usize> = vec![];
+    let mut reduced_counts: Vec<i32> = vec![];
+    let mut reduced_coverage: Vec<u64> = vec![];
+
+    // one loop to populate all these vecs
+    for (hap_index, hl) in hap_labels.iter().enumerate() {
+        let hap_count = hap_counts[hap_index];
+        if hap_count > 0 && (ignore_chain_label_limits || hl.is_normalizing_allele(normalize_all_alleles)) {
+            reduced_alleles.push(hap_index);
+            reduced_counts.push(hap_count);
+            let hap_weight = hap_weights[hap_index].round() as u64;
+            reduced_coverage.push(hap_weight);
+        }
+    }
+
+    // now normalize the probabilities to 1.0
+    let total_hap_count: i32 = reduced_counts.iter().sum();
+    let reduced_probs: Vec<f64> = reduced_counts.into_iter()
+        .map(|c| (c as f64) / (total_hap_count as f64))
+        .collect();
+
+    if reduced_probs.is_empty() || reduced_coverage.iter().sum::<u64>() == 0 {
+        // this happens when we have a haplotype with no actual D6 alleles, it's not a valid result usually
+        // check for exception
+        if !normalize_all_alleles &&
+            i_chain.iter().any(|&hap1| hap_labels[hap1].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) &&
+            j_chain.iter().any(|&hap2| hap_labels[hap2].region_type() == Cyp2d6RegionType::Cyp2d6Deletion) {
+            // normalizing by *5 is disabled AND *5 is in hap1 AND *5 is in hap2
+            // combined with having no normalized coverage, this is a *5/*5 result, which is valid
+            // no penalty from the likelihood here
+            Some((0.0, reduced_alleles, reduced_probs, reduced_coverage))
+        } else {
+            // did not match an exception, invalid result
+            None
+        }
+    } else {
+        // standard path, we have coverage on *something*
+        assert_eq!(reduced_probs.len(), reduced_coverage.len());
+        Some((
+            multinomial_ln_pmf(&reduced_probs, &reduced_coverage).abs(),
+            reduced_alleles, reduced_probs, reduced_coverage
+        ))
+    }
 }
 
 #[cfg(test)]
