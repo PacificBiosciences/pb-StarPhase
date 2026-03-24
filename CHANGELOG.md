@@ -1,3 +1,12 @@
+# v2.1.0
+## Changes
+- Added a new optional CLI parameter for `pbstarphase build`: `--api-keys {JSON}`. This provides API keys for external services used during database construction. Currently, this is used for PharmVar API authentication.
+  - If `--api-keys` is not provided, PharmVar gene queries are skipped with a warning.
+  - See the [Database guide](./docs/database.md#api-keys) for the expected file format and how to obtain a PharmVar API key.
+- Added a warning during `pbstarphase build` indicating that non-reference allele definitions without any alternate variants specified from CPIC are ignored.
+- Released a new version of the database: `data/v2.1.0/pbstarphase_20260324.json.gz`
+  - See [pbstarphase_20260324.db_stat.txt](./data/v2.1.0/pbstarphase_20260324.db_stat.txt) for details
+
 # v2.0.1
 ## Changes
 - Added a new parameter (`--max-sv-length`) that controls the maximum structural variant length that is considered, default: 1 Mbp

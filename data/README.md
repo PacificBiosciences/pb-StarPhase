@@ -9,8 +9,11 @@ As of v0.12.0, each file is labeled as `{version}/pbstarphase_{YYYYMMDD}.json.gz
 
 ```bash
 pbstarphase build \
+    --api-keys {path_to_api_keys}.json \
     --output-db {version}/pbstarphase_{YYYYMMDD}.json.gz
 ```
+
+See the [Database guide](../docs/database.md#api-keys) for details on the `--api-keys` file format.
 
 # Data sources and citations
 ## CPIC data citations

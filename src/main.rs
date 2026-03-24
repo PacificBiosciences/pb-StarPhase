@@ -1,6 +1,7 @@
 
 use log::{LevelFilter, error, info};
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
+use rustc_hash::FxHashMap as HashMap;
 use serde::Serialize;
 use std::fs::File;
 use std::path::Path;
@@ -50,6 +51,19 @@ fn run_build(settings: BuildSettings) {
     };
     info!("Build options: {build_options:#?}");
 
+    // load API keys if provided
+    let api_keys: HashMap<String, String> = if let Some(ak_filename) = cli_settings.api_keys.as_ref() {
+        match load_json(ak_filename) {
+            Ok(keys) => keys,
+            Err(e) => {
+                error!("Error while loading API keys file: {e}");
+                std::process::exit(exitcode::IOERR);
+            }
+        }
+    } else {
+        Default::default()
+    };
+
     // pre-load the reference genome also
     info!("Loading reference genome from {:?}...", cli_settings.reference_filename);
     let reference_genome: ReferenceGenome = match ReferenceGenome::from_fasta(&cli_settings.reference_filename) {
@@ -63,7 +77,8 @@ fn run_build(settings: BuildSettings) {
     // all the work
     let pgx_db: PgxDatabase = match pbstarphase::build_database::build_database_via_api(
         &build_options,
-        &reference_genome
+        &reference_genome,
+        &api_keys
     ) {
         Ok(pdb) => pdb,
         Err(e) => {

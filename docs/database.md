@@ -3,6 +3,8 @@ Table of contents:
 
 * [Overview](#overview)
 * [Building the database](#building-the-database)
+* [API keys](#api-keys)
+* [Database configuration](#database-configuration)
 * [Database statistics](#database-statistics)
 
 ## Overview
@@ -20,13 +22,31 @@ This primarily impacts structural variation (multiple genes) and the hybrid alle
 A new database can be generated automatically using the available data with the following command:
 ```bash
 pbstarphase build \
-  --output-json {path_to_new_database}.json
+  --api-keys {path_to_api_keys}.json \
+  --output-db {path_to_new_database}.json
 ```
 
 This requires an internet connection that can query the various APIs.
 Additionally, this command relies on upstream databases maintaining a known structure.
 If that structure changes, this command may fail and require an update to the software to resolve it.
-If you encounter and issue with building the database, please open an issue on GitHub so we can investigate it.
+If you encounter an issue with building the database, please open an issue on GitHub so we can investigate it.
+
+## API keys
+Some upstream databases require an API key for access.
+The `--api-keys` option accepts a path to a JSON file containing the required keys.
+The expected format is:
+```json
+{
+    "PHARMVAR_API_KEY": "your_key_here"
+}
+```
+
+Currently, the only supported key is `PHARMVAR_API_KEY`, which is used to authenticate requests to the [PharmVar API](https://www.pharmvar.org/documentation).
+If `--api-keys` is not provided (or the file does not contain `PHARMVAR_API_KEY`), PharmVar gene queries will be skipped with a warning.
+The resulting database will still contain CPIC-sourced genes, HLA data, and CYP2D6 data, but will be missing PharmVar-sourced gene entries.
+
+### Obtaining a PharmVar API key
+To obtain a PharmVar API key, [create an account at PharmVar](https://www.pharmvar.org/documentation) and then generate an API key in the Account Settings.
 
 ## Database configuration
 For some genes, there are entries across multiple databases with the greatest overlap between CPIC and PharmVar.
