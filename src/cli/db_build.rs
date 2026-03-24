@@ -31,6 +31,13 @@ pub struct BuildSettings {
     #[clap(help_heading = Some("Input/Output"))]
     pub build_options: Option<PathBuf>,
 
+    /// Optional API keys file (JSON) for external services (e.g. PharmVar)
+    #[clap(short = 'k')]
+    #[clap(long = "api-keys")]
+    #[clap(value_name = "JSON")]
+    #[clap(help_heading = Some("Input/Output"))]
+    pub api_keys: Option<PathBuf>,
+
     /// Enable verbose output.
     #[clap(short = 'v')]
     #[clap(long = "verbose")]
@@ -51,6 +58,14 @@ pub fn check_build_settings(settings: BuildSettings) -> BuildSettings {
         info!("Build options: {build_options:?}");
     } else {
         info!("Build options: default");
+    }
+
+    // check the API keys file
+    check_optional_filename(settings.api_keys.as_deref(), "API keys");
+    if let Some(api_keys) = settings.api_keys.as_ref() {
+        info!("API keys: {api_keys:?}");
+    } else {
+        info!("API keys: not provided");
     }
 
     settings

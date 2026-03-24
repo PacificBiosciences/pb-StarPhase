@@ -41,11 +41,17 @@ const PHARMVAR_API_URL: &str = "https://www.pharmvar.org/api-service";
 
 /// This is the primary call to build out our database locally via multiple API queries.
 /// # Arguments
+/// * `build_options` - the database build options
 /// * `reference_genome` - required now for checking the HLA alignments automatically during DB construction
+/// * `api_keys` - map of API keys loaded from the --api-keys file; used to authenticate with external services
 /// # Errors
 /// * if there are errors retrieving the CPIC gene list
 /// * if there are errors retrieving allele definitions for a gene
-pub fn build_database_via_api(build_options: &DatabaseBuildOptions, reference_genome: &ReferenceGenome) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
+pub fn build_database_via_api(
+    build_options: &DatabaseBuildOptions,
+    reference_genome: &ReferenceGenome,
+    api_keys: &HashMap<String, String>
+) -> Result<PgxDatabase, Box<dyn std::error::Error>> {
     // first get all the CPI genes
     info!("Starting CPIC API queries...");
 
@@ -61,19 +67,25 @@ pub fn build_database_via_api(build_options: &DatabaseBuildOptions, reference_ge
     info!("CPIC API queries complete.");
 
     // now handle the PharmVar genes
-    info!("Starting PharmVar gene queries...");
-    let pharmvar_genes = get_all_pharmvar_genes()?;
-    info!("\tFull PharmVar gene list: {pharmvar_genes:?}");
-    let filtered_pharmvar_genes: Vec<String> = pharmvar_genes.into_iter()
-        // remove anything we do not support or handle separately
-        .filter(|g| !PHARMVAR_IGNORED_GENES.contains(g.as_str()))
-        .sorted()
-        .collect();
-    info!("\tFiltered PharmVar gene list: {filtered_pharmvar_genes:?}");
+    let pharmvar_alleles: Vec<PharmvarAlleleDefinition> = if let Some(api_key) = api_keys.get("PHARMVAR_API_KEY") {
+        info!("Starting PharmVar gene queries...");
+        let pharmvar_genes = get_all_pharmvar_genes(api_key)?;
+        info!("\tFull PharmVar gene list: {pharmvar_genes:?}");
+        let filtered_pharmvar_genes: Vec<String> = pharmvar_genes.into_iter()
+            // remove anything we do not support or handle separately
+            .filter(|g| !PHARMVAR_IGNORED_GENES.contains(g.as_str()))
+            .sorted()
+            .collect();
+        info!("\tFiltered PharmVar gene list: {filtered_pharmvar_genes:?}");
 
-    // now get all the PharmVar alleles, which will be missing the all REF alleles
-    let pharmvar_alleles = query_gene_pharmvar_api(&filtered_pharmvar_genes)?;
-    info!("Found {} PharmVar alleles via API.", pharmvar_alleles.len());
+        // now get all the PharmVar alleles, which will be missing the all REF alleles
+        let alleles = query_gene_pharmvar_api(api_key, &filtered_pharmvar_genes)?;
+        info!("Found {} PharmVar alleles via API.", alleles.len());
+        alleles
+    } else {
+        warn!("No PHARMVAR_API_KEY provided; skipping all PharmVar gene queries.");
+        vec![]
+    };
 
     // now we need to pull down HLA data as well
     info!("Starting HLA queries...");
@@ -324,10 +336,27 @@ pub fn collapse_hla_lookup(dna_data: HashMap<String, (String, String)>, cdna_dat
     Ok(ret)
 }
 
+/// This creates a PharmVar client with the API key set in the headers.
+/// It is shared by all functions that query the PharmVar API.
+/// # Arguments
+/// * `api_key` - the API key to use for the PharmVar API
+/// # Errors
+/// * if the client cannot be built
+fn pharmvar_client(api_key: &str) -> Result<reqwest::blocking::Client, Box<dyn std::error::Error>> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("Api-Key", reqwest::header::HeaderValue::from_str(api_key)?);
+    let client = reqwest::blocking::Client::builder()
+        .default_headers(headers)
+        .build()?;
+    Ok(client)
+}
+
 /// This pulls the list of genes that are available from PharmVar.
+/// # Arguments
+/// * `api_key` - the API key to use for the PharmVar API
 /// # Errors
 /// * if the URL request has issues connecting or converting to JSON
-fn get_all_pharmvar_genes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_all_pharmvar_genes(api_key: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // this endpoint gets the list of genes, ordered by symbol, where the URL field is not empty
     //   this tends to correlate with genes that have allele definitions
     //   if we ever find that does not hold, we can remove the url= filter component and just accept extra queries downstream
@@ -335,7 +364,8 @@ fn get_all_pharmvar_genes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     info!("\tQuerying PharmVar gene list via {gene_url}");
 
     // hit the end point so we can parse it
-    let result: String = reqwest::blocking::get(gene_url)?.text()?;
+    let client = pharmvar_client(api_key)?;
+    let result: String = client.get(gene_url).send()?.text()?;
     debug!("Response received.");
 
     // now parse it via serde
@@ -348,11 +378,13 @@ fn get_all_pharmvar_genes() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 
 /// This will pull all the PharmVar allele definitions for the genes in the list.
 /// # Arguments
+/// * `api_key` - the API key to use for the PharmVar API
 /// * `gene_list` - the list of genes to query
 /// # Errors
 /// * if the URL fails to get
 /// * if the response fails to parse into JSON or our allele definition
-fn query_gene_pharmvar_api(gene_list: &[String]) -> Result<Vec<PharmvarAlleleDefinition>, Box<dyn std::error::Error>> {
+fn query_gene_pharmvar_api(api_key: &str, gene_list: &[String]) -> Result<Vec<PharmvarAlleleDefinition>, Box<dyn std::error::Error>> {
+    let client = pharmvar_client(api_key)?;
     let mut ret = vec![];
     for gene in gene_list.iter() {
         // example URL: https://www.pharmvar.org/api-service/genes/NAT2?exclude-sub-alleles=false&include-reference-variants=false&include-retired-alleles=false&include-retired-reference-sequences=false&reference-collection=GRCh38
@@ -362,7 +394,7 @@ fn query_gene_pharmvar_api(gene_list: &[String]) -> Result<Vec<PharmvarAlleleDef
         info!("\tQuerying \"{gene}\" via {definition_url}");
 
         // hit the end point so we can parse it
-        let result: String = reqwest::blocking::get(definition_url)?.text()?;
+        let result: String = client.get(definition_url).send()?.text()?;
         debug!("Response received.");
 
         // now parse it via serde

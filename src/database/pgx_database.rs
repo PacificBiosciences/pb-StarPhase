@@ -131,7 +131,12 @@ impl PgxDatabase {
 
             // make sure this isn't an SV, we ignore those currently
             if allele_def.is_sv {
-                warn!("SV allele detected, ignoring: {gene}, {}", allele_def.allele_name);
+                warn!("\t\tSkipping {gene}{}: SV allele detected", allele_def.allele_name);
+                continue;
+            }
+
+            if !allele_def.is_reference && allele_def.variants.is_empty() {
+                warn!("\t\tSkipping {gene}{}: non-reference allele definition provided with no variants", allele_def.allele_name);
                 continue;
             }
 
@@ -143,25 +148,27 @@ impl PgxDatabase {
                 None => {
                     // at some point CPIC added NAT2 to the alleles, but not the genes list
                     // we've specifically ignored NAT2 from CPIC, but this handles the general case for other genes
-                    warn!("An allele definition was provided for {gene}, but it was not found in the gene to chromosome list.");
+                    warn!("\t\tAn allele definition was provided for {gene}, but it was not found in the gene to chromosome list.");
                 }
             };
         }
 
         // now we should know which chromosome each gene is on, so we need to add in all the PharmVar allele definitions
-        info!("\tAdding PharmVar allele definitions...");
-        for allele_def in pharmvar_allele_definitions.iter() {
-            // make sure the gene is in our pharmvar list
-            let gene = &allele_def.gene_symbol;
-            if gene_source_config.get(gene).unwrap_or(&PgxDataSource::Unknown) != &PgxDataSource::PharmVar {
-                continue;
-            }
+        if !pharmvar_allele_definitions.is_empty() {
+            info!("\tAdding PharmVar allele definitions...");
+            for allele_def in pharmvar_allele_definitions.iter() {
+                // make sure the gene is in our pharmvar list
+                let gene = &allele_def.gene_symbol;
+                if gene_source_config.get(gene).unwrap_or(&PgxDataSource::Unknown) != &PgxDataSource::PharmVar {
+                    continue;
+                }
 
-            // add the pharmvar allele
-            let gene_entry = gene_entries.get_mut(gene).unwrap();
-            let chrom = gene_entry.chromosome();
-            let reference = reference_genome.get_full_chromosome(chrom);
-            gene_entry.add_pharmvar_allele(allele_def, reference)?;
+                // add the pharmvar allele
+                let gene_entry = gene_entries.get_mut(gene).unwrap();
+                let chrom = gene_entry.chromosome();
+                let reference = reference_genome.get_full_chromosome(chrom);
+                gene_entry.add_pharmvar_allele(allele_def, reference)?;
+            }
         }
 
         // go through all the default SV events and add them

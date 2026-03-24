@@ -1133,8 +1133,8 @@ fn is_partial_deletion(gene_collection: &GeneCollection, structural_variants: &P
             if !is_forward_strand {
                 // subtract the index from the total number of exons-1 to get the reverse index
                 let num_exons = gene_def.exons().len();
-                first_exon_deleted = first_exon_deleted.map(|i| (num_exons-1 - i));
-                last_exon_deleted = last_exon_deleted.map(|i| (num_exons-1 - i));
+                first_exon_deleted = first_exon_deleted.map(|i| num_exons-1 - i);
+                last_exon_deleted = last_exon_deleted.map(|i| num_exons-1 - i);
                 // swap the values to get the correct range
                 std::mem::swap(&mut first_exon_deleted, &mut last_exon_deleted);
             }

@@ -211,7 +211,7 @@ impl HlaConfig {
         &self.gene_collection
     }
 
-    pub fn gene_names(&self) -> Keys<String, GeneDefinition> {
+    pub fn gene_names(&self) -> Keys<'_, String, GeneDefinition> {
         self.gene_collection.gene_dict().keys()
     }
 
