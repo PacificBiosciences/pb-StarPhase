@@ -270,7 +270,8 @@ impl Default for Cyp2d6Config {
         // Any population inferred connections go here, this can include hybrid (e.g. *4 + *68) or duplication (e.g. *2 + *2).
         // Allele pairs that are not on this list will get penalized during the chain assessment.
         let inferred_connections: BTreeSet<(String, String)> = [
-                // known dups
+                // known dups - last updated 2026-07-24
+                // Table 2 - https://a.storyblok.com/f/70677/x/23b673ba0c/cyp2d6_structural-variation_v3-5.pdf
                 ("*1", "*1"),
                 ("*2", "*2"),
                 ("*3", "*3"),
@@ -279,16 +280,27 @@ impl Default for Cyp2d6Config {
                 ("*9", "*9"),
                 ("*10", "*10"),
                 ("*17", "*17"),
+                ("*27", "*27"),
                 ("*28", "*28"),
                 ("*29", "*29"),
                 ("*35", "*35"),
+                ("*36", "*36"),
                 ("*41", "*41"),
                 ("*43", "*43"),
                 ("*45", "*45"),
                 ("*146", "*146"),
-                // hybrid connections
+                // hybrid connections - last updated 2026-07-24
+                // Table 5 - https://a.storyblok.com/f/70677/x/23b673ba0c/cyp2d6_structural-variation_v3-5.pdf
+                // entered in reverse order relative to the Table in PDF
+                ("*83", "*1"),
+                ("*1", "*13"),
+                ("*2", "*13"),
+                ("*68", "*13"),
+                ("*10", "*36"),
+                ("*2", "*68"),
                 ("*4", "*68"),
-                ("*10", "*36")
+                ("*90", "*1"),
+                ("*4", "*164")
             ].iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();

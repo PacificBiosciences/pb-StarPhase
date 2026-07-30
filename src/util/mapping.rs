@@ -9,7 +9,9 @@ pub fn standard_hifi_aligner() -> Aligner<PresetSet> {
     let mut aligner = Aligner::builder()
         .map_hifi()
         .with_cigar();
-    aligner.mapopt.best_n = 5; // temporary workaround caused by error injected in v0.1.21
+    // Pin best_n for StarPhase sensitivity. minimap2-rs 0.1.21 forced best_n=1; 0.1.24+ leaves
+    // it to the preset, but we still want multiple candidates for allele selection.
+    aligner.mapopt.best_n = 5;
     aligner
 }
 

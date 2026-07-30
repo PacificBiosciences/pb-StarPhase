@@ -418,7 +418,7 @@ pub fn diplotype_cyp2d6(
         };
 
         // save the index file also (.tbi)
-        match hiphase::writers::vcf_util::build_bcf_index(vcf_fn, None, 1, true) {
+        match crate::util::vcf_util::build_bcf_index(vcf_fn, None, 1, true) {
             Ok(()) => {},
             Err(e) => {
                 bail!("Error while building CYP2D6 VCF index: {e}");

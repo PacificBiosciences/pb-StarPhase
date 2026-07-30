@@ -11,3 +11,5 @@ pub mod mapping;
 pub mod sequence;
 /// Contains generic statistical functions
 pub mod stats;
+/// VCF/BCF indexing utilities
+pub mod vcf_util;

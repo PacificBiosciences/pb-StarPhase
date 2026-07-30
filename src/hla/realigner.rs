@@ -56,10 +56,12 @@ impl<'a> HlaRealigner<'a> {
         create_hla_fasta(gene_list, database, tmp_db_fasta.path())?;
 
         // prep our alignment to the full database set
+        debug!("Creating database aligner...");
         let db_aligner = standard_hifi_aligner()
             .with_index(tmp_db_fasta.path(), None)?;
         
         // create a gene aligner for each
+        debug!("Creating gene aligners...");
         let mut gene_aligners: HashMap<String, minimap2::Aligner<minimap2::Built>> = Default::default();
         let mut gene_ref_sequence: HashMap<String, Vec<u8>> = Default::default();
         for gene in gene_list.iter() {
