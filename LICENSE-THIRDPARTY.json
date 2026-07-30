@@ -117,15 +117,6 @@
     "description": "assert approximately equal"
   },
   {
-    "name": "atty",
-    "version": "0.2.14",
-    "authors": "softprops <d.tangren@gmail.com>",
-    "repository": "https://github.com/softprops/atty",
-    "license": "MIT",
-    "license_file": null,
-    "description": "A simple interface for querying atty"
-  },
-  {
     "name": "autocfg",
     "version": "1.1.0",
     "authors": "Josh Stone <cuviper@gmail.com>",
@@ -182,6 +173,15 @@
   {
     "name": "bit-vec",
     "version": "0.6.3",
+    "authors": "Alexis Beingessner <a.beingessner@gmail.com>",
+    "repository": "https://github.com/contain-rs/bit-vec",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "A vector of bits"
+  },
+  {
+    "name": "bit-vec",
+    "version": "0.8.0",
     "authors": "Alexis Beingessner <a.beingessner@gmail.com>",
     "repository": "https://github.com/contain-rs/bit-vec",
     "license": "Apache-2.0 OR MIT",
@@ -351,15 +351,6 @@
     "description": "Bindings to Core Foundation for macOS"
   },
   {
-    "name": "cpu-time",
-    "version": "1.0.0",
-    "authors": "Paul Colomiets <paul@colomiets.name>",
-    "repository": null,
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Small crate that provides CPU time measurement."
-  },
-  {
     "name": "crc32fast",
     "version": "1.3.2",
     "authors": "Sam Rijs <srijs@airpost.net>|Alex Crichton <alex@alexcrichton.com>",
@@ -520,15 +511,6 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Macros 1.1 implementation of #[derive(Enum)]"
-  },
-  {
-    "name": "env_logger",
-    "version": "0.9.3",
-    "authors": null,
-    "repository": "https://github.com/env-logger-rs/env_logger/",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "A logging implementation for `log` which is configured via an environment variable."
   },
   {
     "name": "env_logger",
@@ -757,8 +739,8 @@
   },
   {
     "name": "hashbrown",
-    "version": "0.14.0",
-    "authors": "Amanieu d'Antras <amanieu@gmail.com>",
+    "version": "0.17.1",
+    "authors": null,
     "repository": "https://github.com/rust-lang/hashbrown",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
@@ -784,30 +766,12 @@
   },
   {
     "name": "hermit-abi",
-    "version": "0.1.19",
-    "authors": "Stefan Lankes",
-    "repository": "https://github.com/hermitcore/libhermit-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "hermit-abi is small interface to call functions from the unikernel RustyHermit. It is used to build the target `x86_64-unknown-hermit`."
-  },
-  {
-    "name": "hermit-abi",
     "version": "0.3.2",
     "authors": "Stefan Lankes",
     "repository": "https://github.com/hermitcore/rusty-hermit",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Hermit system calls definitions."
-  },
-  {
-    "name": "hiphase",
-    "version": "1.2.1",
-    "authors": "J. Matthew Holt <mholt@pacificbiosciences.com>",
-    "repository": null,
-    "license": null,
-    "license_file": "LICENSE.md",
-    "description": "A tool for jointly phasing small, structural, and tandem repeat variants for PacBio sequencing data"
   },
   {
     "name": "hts-sys",
@@ -937,9 +901,9 @@
   },
   {
     "name": "indexmap",
-    "version": "2.0.0",
+    "version": "2.14.0",
     "authors": null,
-    "repository": "https://github.com/bluss/indexmap",
+    "repository": "https://github.com/indexmap-rs/indexmap",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "A hash table with consistent order and fast iteration."
@@ -1081,7 +1045,7 @@
   },
   {
     "name": "log",
-    "version": "0.4.20",
+    "version": "0.4.29",
     "authors": "The Rust Project Developers",
     "repository": "https://github.com/rust-lang/log",
     "license": "Apache-2.0 OR MIT",
@@ -1117,7 +1081,7 @@
   },
   {
     "name": "minimap2",
-    "version": "0.1.23+minimap2.2.28",
+    "version": "0.1.31+minimap2.2.30",
     "authors": "Joseph Guhlin <joseph.guhlin@gmail.com>",
     "repository": "https://github.com/jguhlin/minimap2-rs",
     "license": "Apache-2.0 OR MIT",
@@ -1126,7 +1090,7 @@
   },
   {
     "name": "minimap2-sys",
-    "version": "0.1.21+minimap2.2.28",
+    "version": "0.1.30+minimap2.2.30",
     "authors": "Joseph Guhlin <joseph.guhlin@gmail.com>",
     "repository": "https://github.com/jguhlin/minimap2-rs",
     "license": "Apache-2.0 OR MIT",
@@ -1306,7 +1270,7 @@
   },
   {
     "name": "pbstarphase",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "authors": null,
     "repository": null,
     "license": null,
@@ -1386,6 +1350,15 @@
     "description": "A Priority Queue implemented as a heap with a function to efficiently change the priority of an item."
   },
   {
+    "name": "priority-queue",
+    "version": "2.7.0",
+    "authors": "Gianmarco Garrisi <gianmarcogarrisi@tutanota.com>",
+    "repository": "https://github.com/garro95/priority-queue",
+    "license": "LGPL-3.0-or-later OR MPL-2.0",
+    "license_file": null,
+    "description": "A Priority Queue implemented as a heap with a function to efficiently change the priority of an item."
+  },
+  {
     "name": "proc-macro-error",
     "version": "1.0.4",
     "authors": "CreepySkeleton <creepy-skeleton@yandex.ru>",
@@ -1405,7 +1378,7 @@
   },
   {
     "name": "proc-macro2",
-    "version": "1.0.86",
+    "version": "1.0.106",
     "authors": "David Tolnay <dtolnay@gmail.com>|Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/dtolnay/proc-macro2",
     "license": "Apache-2.0 OR MIT",
@@ -1531,15 +1504,6 @@
   },
   {
     "name": "rust-htslib",
-    "version": "0.39.5",
-    "authors": "Christopher Schröder <christopher.schroeder@tu-dortmund.de>|Johannes Köster <johannes.koester@tu-dortmund.de>",
-    "repository": "https://github.com/rust-bio/rust-htslib.git",
-    "license": "MIT",
-    "license_file": null,
-    "description": "This library provides HTSlib bindings and a high level Rust API for reading and writing BAM files."
-  },
-  {
-    "name": "rust-htslib",
     "version": "0.44.1",
     "authors": "Christopher Schröder <christopher.schroeder@tu-dortmund.de>|Johannes Köster <johannes.koester@tu-dortmund.de>",
     "repository": "https://github.com/rust-bio/rust-htslib.git",
@@ -1573,6 +1537,15 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "speed, non-cryptographic hash used in rustc"
+  },
+  {
+    "name": "rustc-hash",
+    "version": "2.1.2",
+    "authors": "The Rust Project Developers",
+    "repository": "https://github.com/rust-lang/rustc-hash",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "A speedy, non-cryptographic hashing algorithm used by rustc"
   },
   {
     "name": "rustc_version",
@@ -1729,15 +1702,6 @@
   },
   {
     "name": "simple-error",
-    "version": "0.2.3",
-    "authors": "Wangshan Lu <wisagan@gmail.com>",
-    "repository": "https://github.com/WiSaGaN/simple-error.git",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "A simple error type backed by a string"
-  },
-  {
-    "name": "simple-error",
     "version": "0.3.2",
     "authors": null,
     "repository": "https://github.com/WiSaGaN/simple-error.git",
@@ -1846,7 +1810,7 @@
   },
   {
     "name": "syn",
-    "version": "2.0.74",
+    "version": "2.0.117",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/syn",
     "license": "Apache-2.0 OR MIT",
@@ -1881,6 +1845,15 @@
     "description": "derive(Error)"
   },
   {
+    "name": "thiserror",
+    "version": "2.0.18",
+    "authors": "David Tolnay <dtolnay@gmail.com>",
+    "repository": "https://github.com/dtolnay/thiserror",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "derive(Error)"
+  },
+  {
     "name": "thiserror-impl",
     "version": "1.0.63",
     "authors": "David Tolnay <dtolnay@gmail.com>",
@@ -1890,13 +1863,13 @@
     "description": "Implementation detail of the `thiserror` crate"
   },
   {
-    "name": "threadpool",
-    "version": "1.8.1",
-    "authors": "The Rust Project Developers|Corey Farwell <coreyf@rwell.org>|Stefan Schindler <dns2utf8@estada.ch>",
-    "repository": "https://github.com/rust-threadpool/rust-threadpool",
+    "name": "thiserror-impl",
+    "version": "2.0.18",
+    "authors": "David Tolnay <dtolnay@gmail.com>",
+    "repository": "https://github.com/dtolnay/thiserror",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
-    "description": "A thread pool for running a number of jobs on a fixed set of worker threads."
+    "description": "Implementation detail of the `thiserror` crate"
   },
   {
     "name": "time",
@@ -2126,6 +2099,15 @@
   {
     "name": "waffle_con",
     "version": "0.4.4",
+    "authors": null,
+    "repository": null,
+    "license": null,
+    "license_file": null,
+    "description": null
+  },
+  {
+    "name": "waffle_graph",
+    "version": "0.1.0",
     "authors": null,
     "repository": null,
     "license": null,

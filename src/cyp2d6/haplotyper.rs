@@ -1,12 +1,12 @@
 
-use hiphase::data_types::variants::Variant;
-use hiphase::wfa_graph::{NodeAlleleMap, WFAGraph, WFAResult};
 use itertools::Itertools;
 use log::{debug, trace};
 use rust_lib_reference_genome::reference_genome::ReferenceGenome;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use simple_error::bail;
 use std::collections::BTreeMap;
+use waffle_graph::data_types::variants::Variant;
+use waffle_graph::wfa_graph::{NodeAlleleMap, WFAGraph, WFAResult};
 
 use crate::cyp2d6::definitions::{Cyp2d6Config, generate_cyp_hybrids};
 use crate::cyp2d6::region::Cyp2d6Region;
@@ -438,7 +438,8 @@ impl<'a> Cyp2d6Extractor<'a> {
                 // target_region.end() as usize
                 // otherwise, let's fix to just the relevant aligned backbone region
                 aligned_start,
-                aligned_end
+                aligned_end,
+                1000
         )?;
 
         // we can probably make this smaller eventually, but this is a safe distance for now
@@ -674,25 +675,25 @@ impl LoadedVariants {
                             Variant::new_snv(
                                 0, var_pos as i64,
                                 var_ref.into_bytes(), var_alt.into_bytes(),
-                                0, 1)
+                                0, 1)?
                         } else {
                             Variant::new_insertion(
                                 0, var_pos as i64,
                                 var_ref.into_bytes(), var_alt.into_bytes(),
                                 0, 1
-                            )
+                            )?
                         }
                     } else if var_alt.len() == 1 {
                         Variant::new_deletion(
                             0, var_pos as i64,
                             var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
-                            0, 1)
+                            0, 1)?
                     } else {
                         Variant::new_indel(
                             0, var_pos as i64,
                             var_ref.len(), var_ref.into_bytes(), var_alt.into_bytes(),
                             0, 1
-                        )
+                        )?
                     };
 
                     // also add the variant label
@@ -733,8 +734,8 @@ impl LoadedVariants {
         for (i, variant) in variant_list.iter().enumerate() {
             let var_key = (
                 variant.position() as usize,
-                String::from_utf8(variant.get_allele0().to_vec())?,
-                String::from_utf8(variant.get_allele1().to_vec())?
+                String::from_utf8(variant.allele0().to_vec())?,
+                String::from_utf8(variant.allele1().to_vec())?
             );
 
             // if this is VI, label it as such

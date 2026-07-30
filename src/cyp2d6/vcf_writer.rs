@@ -107,8 +107,8 @@ pub fn write_cyp2d6_vcf(regions: &[Cyp2d6Region], vcf_fn: &Path, loaded_variants
         record.set_rid(Some(0)); // 0 is the index of the contig in the header, which is currently always 0 for us
         record.set_pos(variant.position()); // 0-based position of the variant
         record.set_alleles(&[
-            variant.get_allele0(),
-            variant.get_allele1()
+            variant.allele0(),
+            variant.allele1()
         ])?;
 
         // Set quality - TODO: if we ever enable this, we will need to calculate it; I imagine we would have DP and other metrics at that point

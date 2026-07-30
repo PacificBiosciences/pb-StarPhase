@@ -1,3 +1,11 @@
+# v2.2.0
+## Changes
+- Expanded the set of CYP2D6 inferred allele connections, adding additional known duplications and hybrid linkages from the PharmVar CYP2D6 structural variation reference (v3.5)
+- Released a new version of the database: `data/v2.2.0/pbstarphase_20260724.json.gz`
+  - See [pbstarphase_20260724.db_stat.txt](./data/v2.2.0/pbstarphase_20260724.db_stat.txt) for details
+- Updated minimap2-rs from 0.1.23 to 0.1.31
+- Replaced excessive dependency on hiphase with waffle_graph
+
 # v2.1.0
 ## Changes
 - Added a new optional CLI parameter for `pbstarphase build`: `--api-keys {JSON}`. This provides API keys for external services used during database construction. Currently, this is used for PharmVar API authentication.
