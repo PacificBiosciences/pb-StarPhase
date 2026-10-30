@@ -240,7 +240,9 @@ impl GeneCollection {
 
         let version = match opt_version {
             Some(v) => v,
-            None => bail!("Version string was not found while parsing header.")
+            None => {
+                bail!("Version string was not found while parsing header.");
+            }
         };
 
         // parse through the file, which is a TSV
@@ -536,7 +538,9 @@ fn parse_record_coordinates(record: &gff::Record, chrom_dict: &BTreeMap<String, 
     let raw_chrom = record.seqname();
     let chrom = match chrom_dict.get(raw_chrom) {
         Some(c) => c.clone(),
-        None => bail!("No chromosome definition found for \"{raw_chrom}\"")
+        None => {
+            bail!("No chromosome definition found for \"{raw_chrom}\"");
+        }
     };
     // inputs are 1-based, so shift the start coordinate
     let start = *record.start() - 1;

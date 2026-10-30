@@ -37,7 +37,9 @@ impl StarphaseJson {
     pub fn insert(&mut self, gene: String, diplotype: PgxGeneDetails) -> Result<(), Box<dyn std::error::Error>> {
         match self.gene_details.entry(gene) {
             Vacant(entry) => entry.insert(diplotype),
-            Occupied(entry) => bail!("Entry for {} is already occupied.", entry.key())
+            Occupied(entry) => {
+                bail!("Entry for {} is already occupied.", entry.key());
+            }
         };
         Ok(())
     }

@@ -1,0 +1,57 @@
+Database metadata:
+	Version: 2.3.0-c570007
+	CPIC version: API-2026-10-30T13:16:59.818094538Z
+	HLA version: v3.66.0-alpha
+	PharmVar version: 6.2.29
+	Build time: 2026-10-30 13:16:59.818094538 UTC
+Database gene statistics:
+	Total genes: 35 = 23 (variant-based genes) + 11 (HLA) + 1 (CYP2D6)
+	Gene entries:
+		Total alleles: 2117
+		Total variants: 1519
+	HLA:
+		Total HLA alleles: 44389
+	CYP2D6:
+		Total alleles: 567
+		Total variants: 413
+
+Gene entry statistics:
+gene	core_alleles	sub_alleles	core_variants	sub_variants	data_source
+ABCG2	2	0	1	0	CPIC
+CACNA1S	3	0	2	0	CPIC
+CFTR	104	0	93	0	CPIC
+CYP1A2	48	77	47	31	PharmVar
+CYP2A13	10	21	10	24	PharmVar
+CYP2B6	47	111	49	50	PharmVar
+CYP2C19	46	102	43	60	PharmVar
+CYP2C8	21	44	20	17	PharmVar
+CYP2C9	94	122	92	33	PharmVar
+CYP3A4	50	64	47	15	PharmVar
+CYP3A5	8	39	7	30	PharmVar
+CYP4F2	22	44	20	20	PharmVar
+DPYD	84	0	83	0	CPIC
+G6PD	187	0	173	0	CPIC
+IFNL3	2	0	1	0	CPIC
+MT-RNR1	25	0	22	0	CPIC
+NAT2	59	97	47	28	PharmVar
+NUDT15	22	33	21	10	PharmVar
+RYR1	347	0	320	0	CPIC
+SLCO1B1	45	77	35	18	PharmVar
+TPMT	49	0	45	0	CPIC
+UGT1A1	9	0	4	0	CPIC
+VKORC1	2	0	1	0	CPIC
+
+HLA gene statistics:
+gene	alleles	dna_sequences
+HLA-A	9457	6212
+HLA-B	11328	7385
+HLA-C	9580	6728
+HLA-DPA1	980	609
+HLA-DPB1	3209	1571
+HLA-DQA1	1084	679
+HLA-DQB1	3161	1301
+HLA-DRB1	4056	680
+HLA-DRB3	828	317
+HLA-DRB4	404	157
+HLA-DRB5	302	96
+

@@ -149,7 +149,9 @@ impl<'a> DebugBamWriter<'a> {
         // get the tid which will be shared for all records in this region
         let tid = match self.writer.as_ref().unwrap().header().tid(target_region.chrom().as_bytes()) {
             Some(t) => t as i32,
-            None => bail!("Could not find chromosome \"{}\" in reference genome.", target_region.chrom())
+            None => {
+                bail!("Could not find chromosome \"{}\" in reference genome.", target_region.chrom());
+            }
         };
 
         // get the vec we populate with records on this chromosome

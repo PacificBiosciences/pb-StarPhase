@@ -302,7 +302,8 @@ pub fn diplotype_cyp2d6(
         &consensus_config,
         &raw_consensus_result,
         &d6_typer,
-        max_missing_typing_frac
+        max_missing_typing_frac,
+        cli_settings.min_consensus_fraction
     )?;
 
     debug!("Found {} final consensus sequences", consensus_result.consensuses().len());
@@ -517,7 +518,7 @@ pub fn diplotype_cyp2d6(
     }
 
     // remove any chains with non-unique sub-alleles
-    for (_qname, chain_set) in qname_chains.iter_mut() {
+    for chain_set in qname_chains.values_mut() {
         let new_chain_set: Vec<Vec<usize>> = chain_set.iter()
             .filter(|chain| {
                 chain.iter()
@@ -747,13 +748,15 @@ pub fn diplotype_cyp2d6(
 /// * `raw_consensus_result` - the original consensus
 /// * `d6_typer` - utility for assigning labels to alleles
 /// * `max_missing_consensus_frac` - the maximum allowed missing from a consensus for identification
+/// * `min_consensus_fraction` - a label below this fraction of a shared-HPC group is collapsed into the majority label
 fn merge_consensus_results(
     sequences: &[&str],
     offsets: &[usize],
     cdwfa_config: &CdwfaConfig, 
     raw_consensus_result: &PriorityConsensus,
     d6_typer: &Cyp2d6Extractor,
-    max_missing_consensus_frac: f64
+    max_missing_consensus_frac: f64,
+    min_consensus_fraction: f64
 ) -> Result<MultiConsensus, Box<dyn std::error::Error>> {
     let mut consensus_set: BTreeMap<(String, String), Vec<usize>> = Default::default();
     let mut unknown_set: BTreeMap<String, Vec<usize>> = Default::default();
@@ -796,12 +799,79 @@ fn merge_consensus_results(
         }   
     }
 
+    // labels that share an HPC sequence are the same homopolymer allele; fold a low-coverage
+    // label into the majority one before unknown attachment
+    let mut raw_support = vec![0usize; raw_consensus_result.consensuses().len()];
+    for &si in raw_consensus_result.sequence_indices() {
+        if si < raw_support.len() {
+            raw_support[si] += 1;
+        }
+    }
+
+    // count the total support for each HPC sequence and identify the maximum support for each HPC sequence as well
+    let mut hpc_support: BTreeMap<String, usize> = BTreeMap::new();
+    let mut max_support: BTreeMap<String, usize> = BTreeMap::new();
+    let mut majority_label: BTreeMap<String, String> = BTreeMap::new();
+    for ((hpc, label), indices) in consensus_set.iter() {
+        // count the support for this HPC sequence
+        let support: usize = indices.iter().map(|&si| raw_support[si]).sum();
+        *hpc_support.entry(hpc.clone()).or_default() += support;
+
+        match max_support.get(hpc).copied() {
+            Some(current_max) if support > current_max => {
+                // this is a new maximum, so we need to update the majority label
+                max_support.insert(hpc.clone(), support);
+                majority_label.insert(hpc.clone(), label.clone());
+            },
+            Some(current_max) if support == current_max => {
+                // two labels share the maximum, so there is no single majority
+                majority_label.remove(hpc);
+            },
+            None => {
+                // first entry, so it's auto-maximum
+                max_support.insert(hpc.clone(), support);
+                majority_label.insert(hpc.clone(), label.clone());
+            },
+            _ => {}
+        }
+    }
+
+    // identify any labels that are too small to be independently supported
+    let small_keys: Vec<(String, String)> = consensus_set.iter()
+        .filter_map(|((hpc, label), indices)| {
+            let majority = majority_label.get(hpc)?;
+            if majority == label {
+                return None;
+            }
+            let support: usize = indices.iter().map(|&si| raw_support[si]).sum();
+            let total = hpc_support[hpc];
+            if total > 0 && (support as f64) / (total as f64) < min_consensus_fraction {
+                Some((hpc.clone(), label.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // now iterate and move anything too small into the majority label for that HPC sequence
+    for minor_key in small_keys {
+        let majority = majority_label[&minor_key.0].clone();
+        let entries = consensus_set.remove(&minor_key).unwrap();
+        let minor_count: usize = entries.iter().map(|&si| raw_support[si]).sum();
+        let major_count = max_support[&minor_key.0];
+        debug!(
+            "Collapsing {} ({minor_count} reads) into {majority} ({major_count} reads) with the same HPC sequence",
+            minor_key.1
+        );
+        consensus_set.get_mut(&(minor_key.0, majority)).unwrap().extend(entries);
+    }
+
     // see if we can collapse the unknowns into a parent
     let mut intentional_ignore: HashSet<(String, String)> = Default::default();
     for (hpc_consensus, entries) in unknown_set.into_iter() {
         // figure out how many matches we have
         let mut other_keys = vec![];
-        for (merge_key, _merge_set) in consensus_set.iter() {
+        for merge_key in consensus_set.keys() {
             if hpc_consensus == merge_key.0 {
                 other_keys.push(merge_key.clone());
             }
@@ -851,7 +921,7 @@ fn merge_consensus_results(
             }
 
             // this was a group we made but that we should really ignore
-            Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![0; num_scored])
+            Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![0; num_scored], None)?
         } else if con_indices.len() == 1 {
             // we can just copy the result, but we do still need to propagate the sequence index information
             for (i, &si) in raw_consensus_result.sequence_indices().iter().enumerate() {

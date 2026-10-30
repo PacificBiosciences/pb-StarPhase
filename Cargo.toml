@@ -1,6 +1,6 @@
 [package]
 name = "pbstarphase"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -35,7 +35,7 @@ strum = "0.26.2"
 strum_macros = "0.26.2"
 tempfile = "3.14.0"
 thiserror = "1.0.63"
-waffle_con = { tag = "v0.4.4", git = "https://github.com/PacificBiosciences/waffle_con.git" }
+waffle_con = { tag = "v0.5.0", git = "https://github.com/PacificBiosciences/waffle_con.git" }
 waffle_graph = { tag = "v0.1.0", git = "https://github.com/PacificBiosciences/waffle_graph.git" }
 zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
 

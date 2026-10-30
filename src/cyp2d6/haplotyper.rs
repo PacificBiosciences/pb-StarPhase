@@ -50,7 +50,7 @@ impl<'a> Cyp2d6Extractor<'a> {
         let mut haplotype_lookup: BTreeMap<Cyp2d6RegionLabel, Vec<u8>> = Default::default();
         let variant_list = loaded_variants.ordered_variants();
         let num_variants = variant_list.len();
-        for (_allele_id, allele_def) in database.cyp2d6_gene_def().iter() {
+        for allele_def in database.cyp2d6_gene_def().values() {
             assert_eq!(allele_def.gene_name(), "CYP2D6");
             let mut allele_assignments: Vec<u8> = vec![0; num_variants];
             for variant_def in allele_def.variants().iter() {
@@ -653,7 +653,7 @@ impl LoadedVariants {
         let mut unsorted_variants = vec![];
         let mut vi_set: HashMap<(usize, String, String), String> = Default::default();
         let mut all_set: HashSet<(usize, String, String)> = Default::default();
-        for (_allele_id, allele_def) in database.cyp2d6_gene_def().iter() {
+        for allele_def in database.cyp2d6_gene_def().values() {
             for variant_def in allele_def.variants().iter() {
                 let var_pos = variant_def.position();
                 let var_ref = variant_def.reference().to_string();
@@ -783,7 +783,9 @@ impl LoadedVariants {
     pub fn index_variant(&self, position: usize, reference: &str, alternate: &str) -> Result<usize, Box<dyn std::error::Error>> {
         match self.variant_lookup.get(&(position, reference.to_string(), alternate.to_string())) {
             Some(&idx) => Ok(idx),
-            None => bail!("({position}, {reference}, {alternate}) not found")
+            None => {
+                bail!("({position}, {reference}, {alternate}) not found");
+            }
         }
     }
 
@@ -795,7 +797,9 @@ impl LoadedVariants {
     pub fn index_label(&self, label: &str) -> Result<usize, Box<dyn std::error::Error>> {
         match self.label_lookup.get(label) {
             Some(&idx) => Ok(idx),
-            None => bail!("label {label} not found")
+            None => {
+                bail!("label {label} not found");
+            }
         }
     }
 

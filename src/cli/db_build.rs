@@ -49,7 +49,7 @@ pub fn check_build_settings(settings: BuildSettings) -> BuildSettings {
     // dump stuff to the logger
     check_required_filename(&settings.reference_filename, "Reference FASTA");
     
-    info!("Reference: {:?}", &settings.reference_filename);
+    info!("Reference: {:?}", settings.reference_filename);
     info!("Output database: {:?}", settings.output_database);
 
     // check the build options

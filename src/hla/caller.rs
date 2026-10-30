@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use waffle_con::cdwfa_config::{CdwfaConfig, CdwfaConfigBuilder, CdwfaConfigBuilderError};
 use waffle_con::consensus::{Consensus, ConsensusDWFA};
-use waffle_con::dual_consensus::{DualConsensus, DualConsensusDWFA};
+use waffle_con::dual_consensus::{DualConsensus, DualConsensusDWFA, SequenceAssignment};
 
 use crate::cli::diplotype::DiplotypeSettings;
 use crate::data_types::coordinates::Coordinates;
@@ -76,7 +76,9 @@ pub fn diplotype_hla(
         // get the coordinates for this gene
         let gene_definition = match database.hla_config().gene_definition(gene_name) {
             Some(c) => c,
-            None => bail!("No gene definition for {gene_name}")
+            None => {
+                bail!("No gene definition for {gene_name}");
+            }
         };
         let gene_coordinates = gene_definition.coordinates();
         debug!("Gene coordinates: {gene_coordinates:?}");
@@ -198,11 +200,19 @@ pub fn diplotype_hla(
             // re-run consensus on the groupings; this is required because we might have solved it via cDNA and need the DNA now
             let mut consensus_dwfa1 = ConsensusDWFA::with_config(dwfa_config_from_cli(cli_settings, false)?)?;
             let mut consensus_dwfa2 = ConsensusDWFA::with_config(dwfa_config_from_cli(cli_settings, false)?)?;
-            for ((_qname, read_segment), &is_consensus1) in read_segments.iter().zip(consensus.is_consensus1().iter()) {
-                if is_consensus1 {
-                    consensus_dwfa1.add_sequence(read_segment.as_bytes())?;
-                } else {
-                    consensus_dwfa2.add_sequence(read_segment.as_bytes())?;
+            for ((qname, read_segment), assignment) in read_segments.iter().zip(consensus.assignments().iter()) {
+                match assignment {
+                    SequenceAssignment::Consensus1 => {
+                        consensus_dwfa1.add_sequence(read_segment.as_bytes())?;
+                    },
+                    SequenceAssignment::Consensus2 => {
+                        consensus_dwfa2.add_sequence(read_segment.as_bytes())?;
+                    },
+                    // A tie or a read halted at the edit-distance cap did not choose an allele.
+                    SequenceAssignment::EqualScore | SequenceAssignment::EditDistanceLimit => {
+                        // TODO: is this correct to do?
+                        debug!("Skipping {qname} during regrouping: {assignment:?}");
+                    },
                 }
             }
 
@@ -337,9 +347,7 @@ pub fn diplotype_hla(
                 debug_stats.add_read(gene_name.clone(), "consensus2".to_string(), best_map2)?;
 
                 // we found a dual consensus, first check if the CDF and MAF are passing
-                let total_count = read_segments.len();
-                let counts1 = consensus.is_consensus1().iter().filter(|&&b| b).count();
-                let counts2 = total_count - counts1;
+                let (counts1, counts2) = assigned_allele_counts(consensus.assignments());
                 
                 let dual_passed = is_passing_dual(&consensus, cli_settings);
                 let best_result = if dual_passed.is_passing() {
@@ -417,10 +425,8 @@ pub fn diplotype_hla(
                 }
 
                 // we have a debug writer, so add all of the reads to this list also
-                for ((qname, read_segment), &is_consensus1) in read_segments.iter().zip(consensus.is_consensus1().iter()) {
-                    let con_type = if is_consensus1 { 1 } else { 2 };
-                    let order_index = if is_consensus1 { 3 } else { 6 };
-                    let phase_label = format!("{order_index}_consensus{con_type}_sequence");
+                for ((qname, read_segment), assignment) in read_segments.iter().zip(consensus.assignments().iter()) {
+                    let phase_label = debug_phase_label(*assignment);
                     let tags = [("HP".to_string(), phase_label)].into_iter().collect();
                     match unmapped_record(
                         qname,
@@ -545,7 +551,9 @@ pub fn diplotype_hla_batch(
         // get the coordinates for this gene
         let gene_definition = match database.hla_config().gene_definition(gene_name) {
             Some(c) => c,
-            None => bail!("No gene definition for {gene_name}")
+            None => {
+                bail!("No gene definition for {gene_name}");
+            }
         };
         let gene_coordinates = gene_definition.coordinates();
         debug!("Searching {gene_name} region ({} bp): {gene_coordinates}", gene_coordinates.len());
@@ -691,10 +699,11 @@ pub fn diplotype_hla_batch(
                     Consensus::new(
                         vec![],
                         waffle_con::cdwfa_config::ConsensusCost::L1Distance,
-                        vec![0; realigned_records.len()]
-                    ),
+                        vec![0; realigned_records.len()],
+                        None,
+                    )?,
                     None,
-                    vec![true; realigned_records.len()],
+                    vec![SequenceAssignment::Consensus1; realigned_records.len()],
                     vec![Some(0); realigned_records.len()],
                     vec![None; realigned_records.len()]
                 )?
@@ -712,12 +721,16 @@ pub fn diplotype_hla_batch(
             let mut min_offset2 = usize::MAX;
 
             // first, figure out the minimum offsets in each
-            for ((_qname, realignment_result), &is_consensus1) in realigned_records.iter().zip(consensus.is_consensus1().iter()) {
+            for ((_qname, realignment_result), assignment) in realigned_records.iter().zip(consensus.assignments().iter()) {
                 let record = realignment_result.realigned_record().unwrap();
-                if is_consensus1 {
-                    min_offset1 = min_offset1.min(record.dna_offset());
-                } else {
-                    min_offset2 = min_offset2.min(record.dna_offset());
+                match assignment {
+                    SequenceAssignment::Consensus1 => {
+                        min_offset1 = min_offset1.min(record.dna_offset());
+                    },
+                    SequenceAssignment::Consensus2 => {
+                        min_offset2 = min_offset2.min(record.dna_offset());
+                    },
+                    SequenceAssignment::EqualScore | SequenceAssignment::EditDistanceLimit => {},
                 }
             }
             debug!("Minimum offset1: {min_offset1}");
@@ -726,14 +739,21 @@ pub fn diplotype_hla_batch(
             // now assign the sequences with appropriately shifted offsets
             let mut consensus_dwfa1 = ConsensusDWFA::with_config(config.clone())?;
             let mut consensus_dwfa2 = ConsensusDWFA::with_config(config)?;
-            for ((_qname, realignment_result), &is_consensus1) in realigned_records.iter().zip(consensus.is_consensus1().iter()) {
+            for ((qname, realignment_result), assignment) in realigned_records.iter().zip(consensus.assignments().iter()) {
                 let record = realignment_result.realigned_record().unwrap();
-                if is_consensus1 { // if the dual failed, everything should go into con1
-                    let offset = if record.dna_offset() == min_offset1 { None } else { Some(record.dna_offset() - min_offset1 + half_window) };
-                    consensus_dwfa1.add_sequence_offset(record.dna_sequence(), offset)?;
-                } else {
-                    let offset = if record.dna_offset() == min_offset2 { None } else { Some(record.dna_offset() - min_offset2 + half_window) };
-                    consensus_dwfa2.add_sequence_offset(record.dna_sequence(), offset)?;
+                match assignment {
+                    // A failed dual assigns every tracked read to consensus 1.
+                    SequenceAssignment::Consensus1 => {
+                        let offset = if record.dna_offset() == min_offset1 { None } else { Some(record.dna_offset() - min_offset1 + half_window) };
+                        consensus_dwfa1.add_sequence_offset(record.dna_sequence(), offset)?;
+                    },
+                    SequenceAssignment::Consensus2 => {
+                        let offset = if record.dna_offset() == min_offset2 { None } else { Some(record.dna_offset() - min_offset2 + half_window) };
+                        consensus_dwfa2.add_sequence_offset(record.dna_sequence(), offset)?;
+                    },
+                    SequenceAssignment::EqualScore | SequenceAssignment::EditDistanceLimit => {
+                        debug!("Skipping {qname} during regrouping: {assignment:?}");
+                    },
                 }
             }
 
@@ -877,9 +897,7 @@ pub fn diplotype_hla_batch(
                 debug_stats.add_read(gene_name.clone(), "consensus2".to_string(), best_map2.clone())?;
 
                 // lastly, check if we actually want to report this, or if it's a dual that doesn't pass our config
-                let total_count = realigned_records.len();
-                let counts1 = consensus.is_consensus1().iter().filter(|&&b| b).count();
-                let counts2 = total_count - counts1;
+                let (counts1, counts2) = assigned_allele_counts(consensus.assignments());
 
                 // populate the extras we need to pull out
                 opt_con2 = Some(con2);
@@ -965,11 +983,9 @@ pub fn diplotype_hla_batch(
                 }
 
                 // we have a debug writer, so add all of the reads to this list also
-                for ((_qname, realignment_result), &is_consensus1) in realigned_records.iter().zip(consensus.is_consensus1().iter()) {
+                for ((_qname, realignment_result), assignment) in realigned_records.iter().zip(consensus.assignments().iter()) {
                     let realigned_record = realignment_result.realigned_record().unwrap();
-                    let con_type = if is_consensus1 { 1 } else { 2 };
-                    let order_index = if is_consensus1 { 3 } else { 6 };
-                    let phase_label = format!("{order_index}_consensus{con_type}_sequence");
+                    let phase_label = debug_phase_label(*assignment);
                     let tags = [("HP".to_string(), phase_label)].into_iter().collect();
 
                     match clear_record(realigned_record.realigned_record(), &tags) {
@@ -1126,7 +1142,7 @@ fn dwfa_config_from_cli(cli_settings: &DiplotypeSettings, allow_early_terminatio
 fn run_dual_consensus(segments: &BTreeMap<String, String>, cli_settings: &DiplotypeSettings) -> Result<DualConsensus, Box<dyn std::error::Error>> {
     // now prep the priority consensus runner - we have HPC as priority, then full length
     let mut consensus_dwfa = DualConsensusDWFA::with_config(dwfa_config_from_cli(cli_settings, false)?)?;
-    for (_qname, read_segment) in segments.iter() {
+    for read_segment in segments.values() {
         consensus_dwfa.add_sequence(read_segment.as_bytes())?;
     }
 
@@ -1161,7 +1177,7 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
 
     // first, run on the HPC sequence
     let mut hpc_consensus_dwfa = DualConsensusDWFA::with_config(config.clone())?;
-    for (_qname, realignment_result) in segments.iter() {
+    for realignment_result in segments.values() {
         let record = realignment_result.realigned_record().unwrap();
         let offset = if record.hpc_offset() == min_hpc_offset { None } else { Some(record.hpc_offset() - min_hpc_offset + half_window) };
         hpc_consensus_dwfa.add_sequence_offset(record.hpc_sequence(), offset)?;
@@ -1195,7 +1211,7 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
 
     // now add sequences with adjust offset
     let mut consensus_dwfa = DualConsensusDWFA::with_config(config)?;
-    for (_qname, realignment_result) in segments.iter() {
+    for realignment_result in segments.values() {
         let record = realignment_result.realigned_record().unwrap();
         let offset = if record.dna_offset() == min_dna_offset { None } else { Some(record.dna_offset() - min_dna_offset + half_window) };
         consensus_dwfa.add_sequence_offset(record.dna_sequence(), offset)?;
@@ -1218,6 +1234,31 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
     Ok(dna_consensus)
 }
 
+/// Counts reads assigned to each allele.
+/// Ties and reads halted at the edit-distance cap are omitted from both counts.
+fn assigned_allele_counts(assignments: &[SequenceAssignment]) -> (usize, usize) {
+    let mut counts1 = 0;
+    let mut counts2 = 0;
+    for assignment in assignments {
+        match assignment {
+            SequenceAssignment::Consensus1 => counts1 += 1,
+            SequenceAssignment::Consensus2 => counts2 += 1,
+            SequenceAssignment::EqualScore | SequenceAssignment::EditDistanceLimit => {},
+        }
+    }
+    (counts1, counts2)
+}
+
+/// HP tag for a read in the debug BAM, based on which allele it was assigned to.
+fn debug_phase_label(assignment: SequenceAssignment) -> String {
+    match assignment {
+        SequenceAssignment::Consensus1 => "3_consensus1_sequence".to_string(),
+        SequenceAssignment::Consensus2 => "6_consensus2_sequence".to_string(),
+        SequenceAssignment::EqualScore => "7_equal_score_sequence".to_string(),
+        SequenceAssignment::EditDistanceLimit => "8_edit_distance_limit_sequence".to_string(),
+    }
+}
+
 /// Checks a DualConsensus solution to see if it passes our MAF and CDF cutoffs from the CLI.
 /// # Arguments
 /// * `dual_consensus` - the consensus to check; if not dual, this will always return false
@@ -1225,10 +1266,14 @@ fn run_dual_consensus_with_offsets(segments: &BTreeMap<String, RealignmentResult
 fn is_passing_dual(dual_consensus: &DualConsensus, cli_settings: &DiplotypeSettings) -> DualPassingStats {
     if dual_consensus.is_dual() {
         // we found a dual consensus, first check if the CDF and MAF are passing
+        // only reads that chose an allele contribute; ties and capped reads are not evidence for either
         let maf_cutoff = cli_settings.min_consensus_fraction;
-        let total_count = dual_consensus.is_consensus1().len();
-        let counts1 = dual_consensus.is_consensus1().iter().filter(|&&b| b).count();
-        let counts2 = total_count - counts1;
+        let (counts1, counts2) = assigned_allele_counts(dual_consensus.assignments());
+        let total_count = counts1 + counts2;
+        if total_count == 0 {
+            debug!("DualConsensus detected, but no reads were assigned to either allele");
+            return DualPassingStats::new_dual(false, counts1, counts2, 0.0, 0.0);
+        }
         let minor_count = counts1.min(counts2) as f64;
         let maf = minor_count / (total_count as f64);
         
@@ -1586,7 +1631,7 @@ fn is_hemizygous_better(preliminary_consensus: &DualConsensus, cli_settings: &Di
     // - look at the balance of the consensuses also
 
     // figure out the cost if either c1 or c2 was the single consensus
-    let read_count = preliminary_consensus.is_consensus1().len();
+    let read_count = preliminary_consensus.assignments().len();
     let min_ed = if preliminary_consensus.is_dual() {
         let mut c1_cost = 0;
         let mut c2_cost = 0;
@@ -1619,17 +1664,16 @@ fn is_hemizygous_better(preliminary_consensus: &DualConsensus, cli_settings: &Di
     let haploid_norm_cost = haploid_norm.ln_pdf(read_count as f64).abs();
     let haploid_cost = haploid_ed_cost + haploid_norm_cost;
 
-    // diploid cost is based on our ratios; expecting 50:50; count the number on consensus 1
-    let obs1 = preliminary_consensus.is_consensus1().iter()
-        .filter(|&&x| x)
-        .count();
-    let obs2 = read_count - obs1;
-    let diploid_binomial = Binomial::new(0.5, read_count as u64)?;
+    // diploid cost is based on our ratios; expecting 50:50 among reads that chose an allele
+    let (obs1, obs2) = assigned_allele_counts(preliminary_consensus.assignments());
+    let assigned_count = obs1 + obs2;
+    let diploid_trials = if assigned_count > 0 { assigned_count } else { read_count };
+    let diploid_binomial = Binomial::new(0.5, diploid_trials as u64)?;
     let diploid_balance_penalty = 2.0;
-    let diploid_balance_cost = if preliminary_consensus.is_dual() {
+    let diploid_balance_cost = if preliminary_consensus.is_dual() && assigned_count > 0 {
         diploid_balance_penalty * diploid_binomial.ln_pmf(obs1 as u64).abs()
     } else {
-        // if the result is not dual, then this should be 0.0
+        // a single consensus, or a dual where every read tied or was capped, has no allele balance to score
         0.0
     };
 
@@ -1817,15 +1861,15 @@ mod tests {
         cli_settings.expected_maf = 0.5;
         
         let total = c1+c2;
-        let mut is_consensus1 = vec![true; c1];
-        is_consensus1.extend(vec![false; c2]);
+        let mut assignments = vec![SequenceAssignment::Consensus1; c1];
+        assignments.extend(vec![SequenceAssignment::Consensus2; c2]);
 
         let dual_consensus = DualConsensus::new(
             // these do not matter
-            Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![]),
-            Some(Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![])),
+            Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![], None).unwrap(),
+            Some(Consensus::new(vec![], waffle_con::cdwfa_config::ConsensusCost::L1Distance, vec![], None).unwrap()),
             // this is all that matters for the test
-            is_consensus1,
+            assignments,
             // also don't matter
             vec![None; total],
             vec![None; total],
@@ -1854,8 +1898,8 @@ mod tests {
         let is_dual = c2 != 0;
 
         // make this vec based on consensus counts provided
-        let mut is_consensus1 = vec![true; c1];
-        is_consensus1.extend(vec![false; c2]);
+        let mut assignments = vec![SequenceAssignment::Consensus1; c1];
+        assignments.extend(vec![SequenceAssignment::Consensus2; c2]);
 
         // scores1 has exact match for consensus 1, and then delta for consensus 2
         let mut scores1 = vec![Some(0); c1];
@@ -1872,7 +1916,7 @@ mod tests {
         let consensus = DualConsensus::new(
             consensus1,
             consensus2,
-            is_consensus1,
+            assignments,
             scores1,
             scores2
         )?;

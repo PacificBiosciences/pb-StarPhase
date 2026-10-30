@@ -64,7 +64,7 @@ pub fn print_stats(database: &PgxDatabase) {
         println!("gene\talleles\tdna_sequences");
         let mut allele_counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut dna_counts: BTreeMap<String, usize> = BTreeMap::new();
-        for (_allele_name, gene_entry) in hla_sequences.iter() {
+        for gene_entry in hla_sequences.values() {
             let gene_name = gene_entry.gene_name();
             let dna_sequence = gene_entry.dna_sequence();
             *allele_counts.entry(gene_name.to_string()).or_insert(0) += 1;

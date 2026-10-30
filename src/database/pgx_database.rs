@@ -315,7 +315,9 @@ fn resolve_gene_source_config(
     let prefer_pharmvar = match build_options.default_gene_source {
         PgxDataSource::PharmVar => true,
         PgxDataSource::Cpic => false,
-        PgxDataSource::Unknown => bail!("Unknown default gene source provided in build options"),
+        PgxDataSource::Unknown => {
+            bail!("Unknown default gene source provided in build options");
+        }
     };
     let mut gene_source_config: BTreeMap<String, PgxDataSource> = Default::default();
     if prefer_pharmvar {
@@ -437,8 +439,10 @@ impl PgxGene {
         }
 
         // make sure we did not get a second reference allele, we can't handle that pressure
-        if self.reference_allele.is_some() && allele_definition.is_reference {
-            bail!("Multiple reference alleles provided for {}: {} and {}", self.gene_name, self.reference_allele.as_ref().unwrap(), allele_definition.allele_name);
+        if allele_definition.is_reference {
+            if let Some(reference_allele) = self.reference_allele.as_ref() {
+                bail!("Multiple reference alleles provided for {}: {} and {}", self.gene_name, reference_allele, allele_definition.allele_name);
+            }
         }
 
         // make sure this is not an SV

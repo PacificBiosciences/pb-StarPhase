@@ -124,7 +124,9 @@ pub fn generate_debug_graph(hap_regions: &[Cyp2d6Region], chain_frequency: &BTre
         save_to_file(filename.as_os_str().to_str().unwrap(), &svg.finalize())
     }) {
         Ok(_v) => Ok(()),
-        Err(e) => bail!("Received panic while writing SVG file: {:?}", e.downcast_ref::<&str>())
+        Err(e) => {
+            bail!("Received panic while writing SVG file: {:?}", e.downcast_ref::<&str>());
+        }
     }
 }
 
