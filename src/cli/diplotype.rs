@@ -161,7 +161,8 @@ pub struct DiplotypeSettings {
     #[clap(help_heading = Some("CYP2D6 calling"))]
     pub normalize_d6_only: bool,
 
-    /// The minimum fraction of sequences required to split into multiple consensuses (e.g. MAF)
+    /// The minimum fraction of sequences required to split into multiple consensuses (e.g. MAF).
+    /// For CYP2D6, a label below this fraction of reads that share a homopolymer-compressed sequence is collapsed into the majority label.
     #[clap(long = "min-consensus-fraction")]
     #[clap(value_name = "FLOAT")]
     #[clap(default_value = "0.10")]
@@ -213,7 +214,7 @@ pub fn check_diplotype_settings(mut settings: DiplotypeSettings) -> Result<Diplo
 
     // dump stuff to the logger
     info!("\tDatabase: {:?}", settings.input_database);
-    info!("\tReference: {:?}", &settings.reference_filename);
+    info!("\tReference: {:?}", settings.reference_filename);
     if let Some(vcf_fn) = settings.vcf_filename.as_ref() {
         info!("\tVCF: {:?}", vcf_fn);
         if let Some(sv_fn) = settings.sv_vcf_filename.as_ref() {

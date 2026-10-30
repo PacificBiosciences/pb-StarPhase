@@ -68,7 +68,9 @@ impl<'a> HlaRealigner<'a> {
             // get the gene aligner, or make it if it does not exist
             let gene_def = match database.hla_config().gene_definition(gene) {
                 Some(gd) => gd,
-                None => bail!("Gene definition for {gene} not found.")
+                None => {
+                    bail!("Gene definition for {gene} not found.");
+                }
             };
             let region = gene_def.coordinates();
 

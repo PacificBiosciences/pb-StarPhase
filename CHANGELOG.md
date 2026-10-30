@@ -1,3 +1,12 @@
+# v2.3.0
+## Changes
+- Updated waffle_con from v0.4.4 to v0.5.0
+  - Equal-score reads are no longer assigned to one haplotype during consensus building
+  - In internal tests, this change tends to produce slightly more accurate results for HLA genes and also reduced run-time by ~30%
+- CYP2D6 consensus merging now collapses a low-coverage label into the majority label when both share a homopolymer-compressed sequence, reducing erroneous over-splitting into alleles with low support
+- Released a new version of the database: `data/v2.3.0/pbstarphase_20261030.json.gz`
+  - See [pbstarphase_20261030.db_stat.txt](./data/v2.3.0/pbstarphase_20261030.db_stat.txt) for details
+
 # v2.2.0
 ## Changes
 - Expanded the set of CYP2D6 inferred allele connections, adding additional known duplications and hybrid linkages from the PharmVar CYP2D6 structural variation reference (v3.5)

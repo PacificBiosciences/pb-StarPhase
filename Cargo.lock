@@ -1282,7 +1282,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pbstarphase"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "assert_approx_eq",
  "bio",
@@ -1363,16 +1363,6 @@ name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
-
-[[package]]
-name = "priority-queue"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff39edfcaec0d64e8d0da38564fad195d2d51b680940295fcc307366e101e61"
-dependencies = [
- "autocfg",
- "indexmap 1.9.3",
-]
 
 [[package]]
 name = "priority-queue"
@@ -2183,13 +2173,12 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "waffle_con"
-version = "0.4.4"
-source = "git+https://github.com/PacificBiosciences/waffle_con.git?tag=v0.4.4#56c742105237bd8137c7e58e07a7dc5f31245bfa"
+version = "0.5.0"
+source = "git+https://github.com/PacificBiosciences/waffle_con.git?tag=v0.5.0#5c3c1166ea60870aa40cf18deaa56259c2b7232e"
 dependencies = [
  "derive_builder",
  "itertools 0.12.1",
  "log",
- "priority-queue 1.3.2",
  "rand",
  "rustc-hash 1.1.0",
  "simple-error",
@@ -2202,7 +2191,7 @@ source = "git+https://github.com/PacificBiosciences/waffle_graph.git?tag=v0.1.0#
 dependencies = [
  "bit-vec 0.8.0",
  "log",
- "priority-queue 2.7.0",
+ "priority-queue",
  "rustc-hash 2.1.2",
  "simple-error",
  "thiserror 2.0.18",

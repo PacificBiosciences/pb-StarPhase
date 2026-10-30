@@ -127,7 +127,7 @@ pub fn call_diplotypes(
             debug!("Loaded {} SV genotypes.", sv_vcf_variants.len());
 
             // add the structural variants to the full list
-            vcf_variants.extend(sv_vcf_variants.into_iter());
+            vcf_variants.extend(sv_vcf_variants);
             
             // finally, call the diplotype from the loaded variants
             let diplotype = solve_diplotype(&normalized_haplotypes, &variant_hash, &vcf_variants)?;
@@ -503,7 +503,7 @@ fn load_database_haplotypes(gene_entry: &PgxGene, reference_genome: Option<&Refe
         if normalized {
             // we need to add every variant we found to the hash set
             assert_eq!(normalized_haplotype.variants().len(), normalized_variant_meta.len());
-            for (or_variants, variant_meta) in normalized_haplotype.variants().iter().zip(normalized_variant_meta.into_iter()) {
+            for (or_variants, variant_meta) in normalized_haplotype.variants().iter().zip(normalized_variant_meta) {
                 // this is a list of logically OR'ed variants, they should all have the same metadata though (except None)
                 for opt_nv in or_variants.iter() {
                     match opt_nv {
@@ -561,7 +561,7 @@ fn load_vcf_variants(vcf_fn: &Path, sample_name: &str, variant_hash: &BTreeMap<N
     let mut ret: BTreeMap<NormalizedVariant, NormalizedGenotype> = Default::default();
 
     // iterate over each variant, search for the corresponding entry in the VCF
-    for (variant, _v_meta) in variant_hash.iter() {
+    for variant in variant_hash.keys() {
         trace!("Searching for variant: {variant:?}");
         let chrom: &str = variant.chrom();
         let chrom_index: u32 = vcf_header.name2rid(chrom.as_bytes())?;
@@ -865,7 +865,9 @@ fn load_sv_vcf_variants(
 fn get_sv_type(record: &rust_htslib::bcf::Record) -> Result<SvType, Box<dyn std::error::Error>> {
     let opt_svtype = match record.info(b"SVTYPE").string() {
         Ok(f) => f,
-        Err(e) => bail!("Error while parsing INFO:SVTYPE tag: {} => {e}", record.desc()),
+        Err(e) => {
+            bail!("Error while parsing INFO:SVTYPE tag: {} => {e}", record.desc());
+        }
     };
     match opt_svtype {
         Some(b) => {
@@ -895,7 +897,9 @@ fn get_sv_type(record: &rust_htslib::bcf::Record) -> Result<SvType, Box<dyn std:
 fn get_sv_end(record: &rust_htslib::bcf::Record) -> Result<i32, Box<dyn std::error::Error>> {
     let opt_end = match record.info(b"END").integer() {
         Ok(f) => f,
-        Err(e) => bail!("Error while parsing INFO:END tag: {} => {e}", record.desc()),
+        Err(e) => {
+            bail!("Error while parsing INFO:END tag: {} => {e}", record.desc());
+        }
     };
     match opt_end {
         Some(b) => {

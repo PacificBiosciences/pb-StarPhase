@@ -25,7 +25,7 @@ impl HlaProcessedMatch {
     /// Creates a new processed match with the given haplotype name
     pub fn new(haplotype: String) -> Result<Self, SimpleError> {
         if haplotype.is_empty() {
-            bail!("Haplotype name cannot be empty")
+            bail!("Haplotype name cannot be empty");
         }
         Ok(Self {
             haplotype,
@@ -240,7 +240,9 @@ fn process_mm_cigar(cigar: &[(u32, u8)], target_offset: usize, target_len: usize
             // = - matches, so just copy NM value at this point
             7 => ret.extend(std::iter::repeat_n(current_nm, length as usize)),
             // we should not have any of the others
-            unexpected => bail!("Unexpected cigar type: {unexpected}")
+            unexpected => {
+                bail!("Unexpected cigar type: {unexpected}");
+            }
         };
     }
 

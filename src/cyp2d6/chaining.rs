@@ -243,7 +243,7 @@ pub fn find_best_chain_pair(
     // first, identify all connections
     let num_haps = hap_regions.len();
     let mut downstream_possible: Vec<Vec<bool>> =  vec![vec![false; num_haps]; num_haps]; // 2D [upstream][downstream] -> edge present
-    for (_qname, putative_chains) in obs_chains.iter() {
+    for putative_chains in obs_chains.values() {
         for chain in putative_chains.iter() {
             if chain.len() > 1 {
                 for i in 1..chain.len() {
@@ -425,7 +425,7 @@ pub fn find_best_chain_pair(
 
             // count the number of chains that we cannot exactly find in this diplotype
             let mut unmet_observations = 0;
-            for (_qname, putative_chains) in obs_chains.iter() {
+            for putative_chains in obs_chains.values() {
                 let supported = putative_chains.iter()
                     .any(|chain| {
                         // returns true if the putative chain is a sub-chain of either possible chain we're currently looking at
@@ -467,7 +467,7 @@ pub fn find_best_chain_pair(
                 // we only want to do this if it looks like a promising chain pair
                 let mut read_combined_ed: usize = 0;
                 let mut hap_weights = vec![0.0; hap_labels.len()];
-                for (_qname, chain_weights) in chain_scores.iter() {
+                for chain_weights in chain_scores.values() {
                     let (score, chain_match) = containment_score(&possible_chains[i], &possible_chains[j], chain_weights);
                     // squared for RMS calculation - saturating is really only necessary for unit tests
                     read_combined_ed = read_combined_ed.saturating_add(score);
@@ -1052,9 +1052,9 @@ mod tests {
         // I think this is doable, but we will see
         let consensus = MultiConsensus::new(
             vec![
-                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGAACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0]),
-                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGCACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0]),
-                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0])
+                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGAACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0], None).unwrap(),
+                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGCACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0], None).unwrap(),
+                Consensus::new(b"AGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAACAGCCCATTCTGGCCCCTTCCCCACATGCCAGGACAATGTAGTCCTTGTCACCAATCTGGGCAGTCAGAGTTGGGTCAGTGGGGGACATGGGATTATGGGCAAGGGTAAC".to_vec(), ConsensusCost::L1Distance, vec![0], None).unwrap()
                 //                                                                                                  ^change here
             ],
             vec![0] // these don't matter for the test

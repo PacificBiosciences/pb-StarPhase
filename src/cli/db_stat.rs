@@ -27,7 +27,7 @@ pub fn check_db_stat_settings(settings: DbStatSettings) -> DbStatSettings {
     // dump stuff to the logger
     check_required_filename(&settings.input_database, "Database JSON");
     
-    info!("Input database: {:?}", &settings.input_database);
+    info!("Input database: {:?}", settings.input_database);
     
     settings
 }

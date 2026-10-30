@@ -16,7 +16,9 @@ pub fn reverse_complement(original: &[u8]) -> Result<Vec<u8>, SimpleError> {
                 b'G' => Ok(b'C'),
                 b'T' => Ok(b'A'),
                 b'N' => Ok(b'N'),
-                _ => bail!("Unexpected character for reverse-complement: {c}")
+                _ => {
+                    bail!("Unexpected character for reverse-complement: {c}");
+                }
             }
         })
         .collect::<Result<Vec<u8>, SimpleError>>()
